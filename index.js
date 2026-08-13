@@ -22,6 +22,8 @@ const BOT_NUMBER = (process.env.BOT_NUMBER || "").replace(/\D/g, "");
 const GROQ_API_KEY = (process.env.GROQ_API_KEY || "").trim();
 const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.1-8b-instant";
 const GROQ_BASE_URL = (process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1").replace(/\/+$/, "");
+const PRIVATE_ALLOWED_NUMBER = (process.env.PRIVATE_ALLOWED_NUMBER || "").replace(/\D/g, "");
+const BOT_TIMEZONE = process.env.BOT_TIMEZONE || "Asia/Jakarta";
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
 const PREFIX = process.env.PREFIX || "!";
 const AUTH_METHOD = (process.env.AUTH_METHOD || "qr").toLowerCase();
@@ -254,14 +256,35 @@ function formatSearchResults(results) {
   return lines.join("\n");
 }
 
+function getCurrentDateTime() {
+  try {
+    return new Intl.DateTimeFormat("id-ID", {
+      timeZone: BOT_TIMEZONE,
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+      timeZoneName: "short",
+    }).format(new Date());
+  } catch (error) {
+    console.warn("BOT_TIMEZONE tidak valid, memakai UTC:", BOT_TIMEZONE);
+    return new Date().toISOString();
+  }
+}
+
 async function askAI(userId, prompt, authorName = "User") {
   if (!GROQ_API_KEY) {
     return "Waduh, GROQ_API_KEY belum diatur. Hubungi admin ya.";
   }
 
+  const systemPromptWithTime = `${SYSTEM_PROMPT}\n\nInformasi waktu saat ini:\n- Zona waktu acuan: ${BOT_TIMEZONE}\n- Tanggal dan jam saat ini: ${getCurrentDateTime()}\nGunakan informasi ini saat menjawab pertanyaan yang berkaitan dengan hari, tanggal, bulan, tahun, atau jam. Jangan mengarang waktu yang berbeda.`;
   const history = MEMORY[userId] || [];
   const messages = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: systemPromptWithTime },
     ...history.map((item) => ({
       role: item.role === "assistant" ? "assistant" : "user",
       content: item.text,
@@ -364,6 +387,13 @@ async function handleMessage(sock, msg) {
       msg.message.imageMessage?.caption ||
       "";
 
+    const sender = msg.key.participant || jid;
+    const userId = normalizeJidNumber(sender);
+    if (!isGroup && userId !== PRIVATE_ALLOWED_NUMBER) {
+      console.log(`[P][${userId || "unknown"}] pesan privat diabaikan: nomor tidak diizinkan`);
+      return;
+    }
+
     if (!text.trim()) return;
 
     if (isGroup) {
@@ -381,8 +411,6 @@ async function handleMessage(sock, msg) {
       }
     }
 
-    const sender = msg.key.participant || jid;
-    const userId = sender.split("@")[0];
     const pushName = msg.pushName || "User";
 
     const now = Date.now();
@@ -444,6 +472,9 @@ async function startBot() {
   }
   if (!GROQ_API_KEY) {
     console.warn("GROQ_API_KEY masih kosong!");
+  }
+  if (!PRIVATE_ALLOWED_NUMBER) {
+    console.warn("PRIVATE_ALLOWED_NUMBER masih kosong; semua chat privat akan diabaikan.");
   }
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
