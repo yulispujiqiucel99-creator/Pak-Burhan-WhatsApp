@@ -1,6 +1,6 @@
 # Pak Burhan WhatsApp Bot
 
-Bot WhatsApp persona **Pak Burhan** sebagai wali kelas 7D. Proyek ini menggunakan **Node.js, Baileys, Google Gemini API, dan Tavily opsional**.
+Bot WhatsApp persona **Pak Burhan** sebagai wali kelas 7D. Proyek ini menggunakan **Node.js, Baileys, Groq API, dan Tavily opsional**.
 
 ## Fitur
 
@@ -14,7 +14,7 @@ cp .env.example .env
 npm start
 ```
 
-Isi `GEMINI_API_KEY` pada `.env` sebelum menjalankan bot. API key dibuat dari [Google AI Studio](https://aistudio.google.com/apikey); jangan pernah menyimpan key asli ke repository.
+Isi `GROQ_API_KEY` pada `.env` sebelum menjalankan bot. API key dibuat dari [Groq Console](https://console.groq.com/keys); jangan pernah menyimpan key asli ke repository.
 
 ## Variabel Lingkungan
 
@@ -22,8 +22,9 @@ Isi `GEMINI_API_KEY` pada `.env` sebelum menjalankan bot. API key dibuat dari [G
 |---|---|
 | `AUTH_METHOD` | `qr` sebagai default, atau `pairing`. |
 | `BOT_NUMBER` | Wajib untuk metode `pairing`; gunakan format `628...`. |
-| `GEMINI_API_KEY` | API key Google Gemini dari Google AI Studio. Wajib untuk chat AI. |
-| `GEMINI_MODEL` | Default `gemini-3.1-flash-lite` melalui Gemini Interactions API. Ubah hanya ke endpoint Gemini yang tersedia untuk akun Anda. |
+| `GROQ_API_KEY` | API key Groq dari Groq Console. Wajib untuk chat AI. |
+| `GROQ_MODEL` | Default `llama-3.1-8b-instant`; ganti hanya ke model Groq yang tersedia untuk akun Anda. |
+| `GROQ_BASE_URL` | Default `https://api.groq.com/openai/v1`; biasanya tidak perlu diubah. |
 | `TAVILY_API_KEY` | Opsional; dipakai untuk fitur pencarian internet. |
 | `PREFIX` | Awalan perintah bot; default `!`. |
 
@@ -37,6 +38,6 @@ Setelah deployment, buka menu **Logs** Railway. Jika `AUTH_METHOD=qr`, log akan 
 
 Untuk menghubungkan nomor WhatsApp yang berbeda, hapus folder `auth_info` pada volume Railway atau lakukan *wipe* volume, lalu deploy atau restart ulang bot.
 
-## Penanganan Error Gemini
+## Penanganan Error Groq
 
-Bot memakai **Gemini Interactions API** dan menampilkan pesan yang lebih jelas jika Gemini membalas kode **404** karena model tidak tersedia untuk API key, kode **429** karena batas penggunaan, atau kode **401/403** karena `GEMINI_API_KEY` tidak valid. Detail kesalahan API dicatat pada log Railway agar konfigurasi dapat diperiksa tanpa membocorkan API key ke chat.
+Bot memakai **Groq Chat Completions API** dan menyimpan maksimal **4 putaran** percakapan sebagai konteks agar penggunaan token lebih terkendali. Bot menampilkan pesan yang lebih jelas jika Groq membalas kode **404** karena model tidak tersedia, kode **429** karena batas penggunaan, atau kode **401/403** karena `GROQ_API_KEY` tidak valid. Detail kesalahan API dicatat pada log Railway agar konfigurasi dapat diperiksa tanpa membocorkan API key ke chat.

@@ -19,8 +19,9 @@ const fs = require("fs");
 const path = require("path");
 
 const BOT_NUMBER = (process.env.BOT_NUMBER || "").replace(/\D/g, "");
-const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || "").trim();
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
+const GROQ_API_KEY = (process.env.GROQ_API_KEY || "").trim();
+const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.1-8b-instant";
+const GROQ_BASE_URL = (process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1").replace(/\/+$/, "");
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
 const PREFIX = process.env.PREFIX || "!";
 const AUTH_METHOD = (process.env.AUTH_METHOD || "qr").toLowerCase();
@@ -92,7 +93,7 @@ Di grup: sebut / tag bot dulu supaya tidak spam.
 
 Ingat ya, berbicara yang sopan. Pak Burhan senang membantu yang sopan.`;
 
-const MAX_HISTORY_TURNS = 8;
+const MAX_HISTORY_TURNS = 4;
 let MEMORY = {};
 let memoryDirty = false;
 let memoryUpdateCount = 0;
@@ -253,69 +254,56 @@ function formatSearchResults(results) {
 }
 
 async function askAI(userId, prompt, authorName = "User") {
-  if (!GEMINI_API_KEY) {
-    return "Waduh, GEMINI_API_KEY belum diatur. Hubungi admin ya.";
+  if (!GROQ_API_KEY) {
+    return "Waduh, GROQ_API_KEY belum diatur. Hubungi admin ya.";
   }
 
   const history = MEMORY[userId] || [];
-  const historyText = history
-    .map((item) => {
-      const speaker = item.role === "assistant" ? "Pak Burhan" : "Pengguna";
-      return `${speaker}: ${item.text}`;
-    })
-    .join("\n");
-  const input = [
-    "Gunakan riwayat berikut hanya sebagai konteks percakapan.",
-    historyText || "(Belum ada riwayat percakapan.)",
-    `Pesan terbaru dari ${authorName}: ${prompt}`,
-  ].join("\n\n");
+  const messages = [
+    { role: "system", content: SYSTEM_PROMPT },
+    ...history.map((item) => ({
+      role: item.role === "assistant" ? "assistant" : "user",
+      content: item.text,
+    })),
+    { role: "user", content: `[${authorName}]: ${prompt}` },
+  ];
 
   try {
     const { data } = await axios.post(
-      "https://generativelanguage.googleapis.com/v1beta/interactions",
+      `${GROQ_BASE_URL}/chat/completions`,
       {
-        model: GEMINI_MODEL,
-        input,
-        store: false,
-        system_instruction: SYSTEM_PROMPT,
-        generation_config: {
-          temperature: 0.7,
-          max_output_tokens: 2048,
-        },
+        model: GROQ_MODEL,
+        messages,
+        temperature: 0.7,
+        max_completion_tokens: 1024,
       },
       {
         headers: {
+          Authorization: `Bearer ${GROQ_API_KEY}`,
           "Content-Type": "application/json",
-          "x-goog-api-key": GEMINI_API_KEY,
         },
         timeout: 60000,
       }
     );
 
-    const answer = (data?.steps || [])
-      .filter((step) => step.type === "model_output")
-      .flatMap((step) => step.content || [])
-      .map((content) => content.text || "")
-      .join("")
-      .trim();
-
+    const answer = data?.choices?.[0]?.message?.content?.trim();
     return (
-      answer.slice(0, 3500) ||
+      answer?.slice(0, 3500) ||
       "Maaf, Pak Burhan belum mendapat jawaban yang jelas. Coba ulangi ya."
     );
   } catch (e) {
     const status = e.response?.status;
     const detail = e.response?.data?.error?.message || e.message;
-    console.error("Gemini Interactions API error:", status || "-", detail);
+    console.error("Groq API error:", status || "-", detail);
 
     if (status === 404) {
-      return "Maaf, model Gemini yang dipilih belum tersedia. Hubungi admin ya.";
+      return "Maaf, model Groq yang dipilih belum tersedia. Hubungi admin ya.";
     }
     if (status === 429) {
       return "Maaf, layanan AI sedang mencapai batas penggunaan. Coba lagi beberapa saat ya.";
     }
     if (status === 401 || status === 403) {
-      return "Maaf, konfigurasi API Gemini belum valid. Hubungi admin ya.";
+      return "Maaf, konfigurasi API Groq belum valid. Hubungi admin ya.";
     }
     return "Maaf, sedang ada gangguan. Coba lagi sebentar ya.";
   }
@@ -435,8 +423,8 @@ async function startBot() {
     console.error("AUTH_METHOD=pairing membutuhkan BOT_NUMBER di .env");
     process.exit(1);
   }
-  if (!GEMINI_API_KEY) {
-    console.warn("GEMINI_API_KEY masih kosong!");
+  if (!GROQ_API_KEY) {
+    console.warn("GROQ_API_KEY masih kosong!");
   }
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
