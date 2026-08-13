@@ -468,6 +468,12 @@ function getBotMentionSource(msg, sock, text) {
   return null;
 }
 
+function hasMassMention(text) {
+  return /(^|\s)@(semua|everyone|all|here)(?=\s|$|[,.!?;:])/i.test(
+    String(text || "")
+  );
+}
+
 function cleanMentions(text) {
   return (text || "")
     .replace(/@\d{5,16}/g, "")
@@ -506,6 +512,10 @@ async function handleMessage(sock, msg) {
     if (!text.trim()) return;
 
     if (isGroup) {
+      if (hasMassMention(text)) {
+        console.log("[G] pesan dengan mention massal diabaikan.");
+        return;
+      }
       const mentions = getMentionedJids(msg);
       const botIdentities = getBotIdentityJids(sock);
       const mentionSource = getBotMentionSource(msg, sock, text);
