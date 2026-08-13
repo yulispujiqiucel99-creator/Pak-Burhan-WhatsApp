@@ -39,6 +39,7 @@ let activeGroqKeyIndex = 0;
 const AUTH_DIR = path.join(__dirname, "auth_info");
 const DATA_DIR = path.join(__dirname, "data");
 const MEMORY_FILE = path.join(DATA_DIR, "memory.json");
+const PROFILES_FILE = path.join(DATA_DIR, "profiles.json");
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -56,7 +57,7 @@ Gaya Berbicara:
 - Selalu sisipkan frasa khas bapak-bapak seperti "nah", "nah gitu", "coba kita lihat", "jadi begini ya", atau "pelan-pelan ya".
 - Jangan terlalu kaku dan formal, tapi hindari penggunaan emoji yang berlebihan (maksimal 1-2 emoji per pesan).
 - Sapa pengguna laki-laki dengan "mas" dan perempuan dengan "mbak".
-- Jika belum tahu gendernya, tanyakan dengan sopan di awal obrolan lalu ingat terus panggilan tersebut.
+- Gunakan nama, gender, dan panggilan pengguna yang diberikan dalam konteks profil. Jangan menebak gender atau mengganti panggilan tersebut.
 - Jangan terlalu sering memanggil "nak", gunakan panggilan ini HANYA saat memberikan nasihat serius.
 
 Aturan Utama & Moderasi:
@@ -102,10 +103,13 @@ const HELP_TEXT = `Nah, ini daftar yang bisa kamu pakai ya:
 Di grup: gunakan format @bot diikuti pertanyaan, supaya tidak spam.
 Contoh: @Pak Burhan jadwal ulangan kapan?
 
+Sebelum chat AI dimulai, Pak Burhan akan meminta nama dan gender terlebih dahulu agar panggilannya tepat.
+
 Ingat ya, berbicara yang sopan. Pak Burhan senang membantu yang sopan.`;
 
 const MAX_HISTORY_TURNS = 4;
 let MEMORY = {};
+let PROFILES = {};
 let memoryDirty = false;
 let memoryUpdateCount = 0;
 let lastMemorySave = Date.now();
@@ -122,6 +126,16 @@ function loadMemory() {
   }
 }
 
+function loadProfiles() {
+  try {
+    if (fs.existsSync(PROFILES_FILE)) {
+      PROFILES = JSON.parse(fs.readFileSync(PROFILES_FILE, "utf8"));
+    }
+  } catch {
+    PROFILES = {};
+  }
+}
+
 function saveMemory(force = false) {
   if (!force && !memoryDirty) return;
   try {
@@ -133,6 +147,16 @@ function saveMemory(force = false) {
     lastMemorySave = Date.now();
   } catch (e) {
     console.warn("Gagal simpan memory:", e.message);
+  }
+}
+
+function saveProfiles() {
+  try {
+    const tmp = PROFILES_FILE + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(PROFILES, null, 2), "utf8");
+    fs.renameSync(tmp, PROFILES_FILE);
+  } catch (e) {
+    console.warn("Gagal simpan profil:", e.message);
   }
 }
 
@@ -165,14 +189,107 @@ function saveTurn(userId, userText, botText) {
   maybeSaveMemory();
 }
 
+function detectGender(text) {
+  const value = String(text || "").toLowerCase();
+  if (/\b(laki(?:-?laki)?|pria|cowok|lelaki|male)\b/.test(value)) return "male";
+  if (/\b(perempuan|wanita|cewek|female)\b/.test(value)) return "female";
+  return null;
+}
+
+function extractName(text) {
+  const original = String(text || "").trim();
+  const explicitName = original.match(
+    /^(?:nama(?:\s+saya)?|namaku|panggil(?:\s+saya)?|saya)\s*(?:adalah|itu|:|-)?\s*(.+)$/i
+  );
+  let candidate = explicitName ? explicitName[1] : original;
+  candidate = candidate
+    .replace(/\b(laki(?:-?laki)?|pria|cowok|lelaki|male|perempuan|wanita|cewek|female)\b.*$/i, "")
+    .replace(/[^\p{L}\s'.-]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const hasQuestionSignal = /[?]|\b(apa|siapa|kapan|di mana|dimana|bagaimana|kenapa|mengapa|tolong|cari|jam)\b/i.test(original);
+  const commonGreetings = new Set([
+    "halo", "hai", "hi", "p", "test", "oke", "ok", "assalamualaikum", "assalamu alaikum",
+  ]);
+  const words = candidate.split(/\s+/).filter(Boolean);
+  if (
+    !candidate ||
+    hasQuestionSignal ||
+    words.length > 4 ||
+    commonGreetings.has(candidate.toLowerCase())
+  ) {
+    return null;
+  }
+
+  return words
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function getProfileGreeting(profile) {
+  const honorific = profile.gender === "female" ? "Mbak" : "Mas";
+  return `${honorific} ${profile.name}`;
+}
+
+function processProfileOnboarding(profileId, text) {
+  const existing = PROFILES[profileId];
+  if (existing?.name && existing?.gender) {
+    return { ready: true, profile: existing };
+  }
+
+  if (!existing?.name) {
+    const name = extractName(text);
+    if (!name) {
+      return {
+        ready: false,
+        reply: "Sebelum Pak Burhan bantu, kenalan dulu ya. Siapa nama kamu? Tulis nama saja, misalnya: Naufal.",
+      };
+    }
+
+    const gender = detectGender(text);
+    PROFILES[profileId] = { name, gender: gender || null };
+    saveProfiles();
+
+    if (!gender) {
+      return {
+        ready: false,
+        reply: `Terima kasih, ${name}. Kamu laki-laki atau perempuan? Tulis salah satu saja ya.`,
+      };
+    }
+  } else {
+    const gender = detectGender(text);
+    if (!gender) {
+      return {
+        ready: false,
+        reply: `Supaya panggilannya tepat, ${existing.name} laki-laki atau perempuan? Tulis salah satu saja ya.`,
+      };
+    }
+    PROFILES[profileId] = { ...existing, gender };
+    saveProfiles();
+  }
+
+  const profile = PROFILES[profileId];
+  return {
+    ready: false,
+    reply: `Terima kasih, ${getProfileGreeting(profile)}. Sekarang kamu boleh kirim pertanyaan untuk Pak Burhan ya.`,
+  };
+}
+
 loadMemory();
-process.on("exit", () => saveMemory(true));
+loadProfiles();
+process.on("exit", () => {
+  saveMemory(true);
+  saveProfiles();
+});
 process.on("SIGINT", () => {
   saveMemory(true);
+  saveProfiles();
   process.exit(0);
 });
 process.on("SIGTERM", () => {
   saveMemory(true);
+  saveProfiles();
   process.exit(0);
 });
 
@@ -284,12 +401,13 @@ function getCurrentDateTime() {
   }
 }
 
-async function askAI(userId, prompt, authorName = "User") {
+async function askAI(userId, prompt, profile) {
   if (!GROQ_API_KEYS.length) {
     return "Waduh, GROQ_API_KEYS belum diatur. Hubungi admin ya.";
   }
 
-  const systemPromptWithTime = `${SYSTEM_PROMPT}\n\nInformasi waktu saat ini:\n- Zona waktu acuan: ${BOT_TIMEZONE}\n- Tanggal dan jam saat ini: ${getCurrentDateTime()}\nGunakan informasi ini saat menjawab pertanyaan yang berkaitan dengan hari, tanggal, bulan, tahun, atau jam. Jangan mengarang waktu yang berbeda.`;
+  const profileGreeting = getProfileGreeting(profile);
+  const systemPromptWithTime = `${SYSTEM_PROMPT}\n\nProfil pengguna saat ini:\n- Nama: ${profile.name}\n- Gender: ${profile.gender === "female" ? "perempuan" : "laki-laki"}\n- Panggilan wajib: ${profileGreeting}\nGunakan panggilan tersebut dengan tepat; jangan menebak atau menggantinya.\n\nInformasi waktu saat ini:\n- Zona waktu acuan: ${BOT_TIMEZONE}\n- Tanggal dan jam saat ini: ${getCurrentDateTime()}\nGunakan informasi ini saat menjawab pertanyaan yang berkaitan dengan hari, tanggal, bulan, tahun, atau jam. Jangan mengarang waktu yang berbeda.`;
   const history = MEMORY[userId] || [];
   const messages = [
     { role: "system", content: systemPromptWithTime },
@@ -297,7 +415,7 @@ async function askAI(userId, prompt, authorName = "User") {
       role: item.role === "assistant" ? "assistant" : "user",
       content: item.text,
     })),
-    { role: "user", content: `[${authorName}]: ${prompt}` },
+    { role: "user", content: `[${profileGreeting}]: ${prompt}` },
   ];
 
   let lastError;
@@ -544,8 +662,15 @@ async function handleMessage(sock, msg) {
       }
     }
 
-        const pushName = msg.pushName || "User";
-    const conversationId = isGroup ? `group:${jid}:${senderId}` : `private:${senderId}`;
+        const conversationId = isGroup ? `group:${jid}:${senderId}` : `private:${senderId}`;
+    const profileId = `user:${senderId}`;
+    const onboarding = processProfileOnboarding(profileId, text);
+    if (!onboarding.ready) {
+      await sock.sendMessage(jid, { text: onboarding.reply }, { quoted: msg });
+      return;
+    }
+
+    const profile = onboarding.profile;
     const now = Date.now();
     if (cooldown.has(conversationId) && now - cooldown.get(conversationId) < COOLDOWN_MS) {
       return;
@@ -586,7 +711,7 @@ async function handleMessage(sock, msg) {
     }
 
     await sock.sendPresenceUpdate("composing", jid).catch(() => {});
-    const reply = await askAI(conversationId, finalPrompt, pushName);
+    const reply = await askAI(conversationId, finalPrompt, profile);
     await sock.sendMessage(jid, { text: reply }, { quoted: msg });
     saveTurn(conversationId, text, reply);
   } catch (e) {
