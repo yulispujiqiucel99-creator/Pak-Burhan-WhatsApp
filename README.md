@@ -23,7 +23,7 @@ Isi `GEMINI_API_KEY` pada `.env` sebelum menjalankan bot. API key dibuat dari [G
 | `AUTH_METHOD` | `qr` sebagai default, atau `pairing`. |
 | `BOT_NUMBER` | Wajib untuk metode `pairing`; gunakan format `628...`. |
 | `GEMINI_API_KEY` | API key Google Gemini dari Google AI Studio. Wajib untuk chat AI. |
-| `GEMINI_MODEL` | Default `gemini-2.5-flash`. Ubah hanya ke endpoint Gemini yang tersedia untuk akun Anda. |
+| `GEMINI_MODEL` | Default `gemini-3.1-flash-lite` melalui Gemini Interactions API. Ubah hanya ke endpoint Gemini yang tersedia untuk akun Anda. |
 | `TAVILY_API_KEY` | Opsional; dipakai untuk fitur pencarian internet. |
 | `PREFIX` | Awalan perintah bot; default `!`. |
 
@@ -39,4 +39,4 @@ Untuk menghubungkan nomor WhatsApp yang berbeda, hapus folder `auth_info` pada v
 
 ## Penanganan Error Gemini
 
-Bot menampilkan pesan yang lebih jelas jika Gemini membalas kode **429** karena batas penggunaan, atau kode **401/403** karena `GEMINI_API_KEY` tidak valid. Detail kesalahan API dicatat pada log Railway agar konfigurasi dapat diperiksa tanpa membocorkan API key ke chat.
+Bot memakai **Gemini Interactions API** dan menampilkan pesan yang lebih jelas jika Gemini membalas kode **404** karena model tidak tersedia untuk API key, kode **429** karena batas penggunaan, atau kode **401/403** karena `GEMINI_API_KEY` tidak valid. Detail kesalahan API dicatat pada log Railway agar konfigurasi dapat diperiksa tanpa membocorkan API key ke chat.

@@ -20,7 +20,7 @@ const path = require("path");
 
 const BOT_NUMBER = (process.env.BOT_NUMBER || "").replace(/\D/g, "");
 const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || "").trim();
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
 const PREFIX = process.env.PREFIX || "!";
 const AUTH_METHOD = (process.env.AUTH_METHOD || "qr").toLowerCase();
@@ -258,26 +258,29 @@ async function askAI(userId, prompt, authorName = "User") {
   }
 
   const history = MEMORY[userId] || [];
-  const contents = history.map((item) => ({
-    role: item.role === "assistant" ? "model" : "user",
-    parts: [{ text: item.text }],
-  }));
-  contents.push({
-    role: "user",
-    parts: [{ text: `[${authorName}]: ${prompt}` }],
-  });
+  const historyText = history
+    .map((item) => {
+      const speaker = item.role === "assistant" ? "Pak Burhan" : "Pengguna";
+      return `${speaker}: ${item.text}`;
+    })
+    .join("\n");
+  const input = [
+    "Gunakan riwayat berikut hanya sebagai konteks percakapan.",
+    historyText || "(Belum ada riwayat percakapan.)",
+    `Pesan terbaru dari ${authorName}: ${prompt}`,
+  ].join("\n\n");
 
   try {
     const { data } = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent`,
+      "https://generativelanguage.googleapis.com/v1beta/interactions",
       {
-        systemInstruction: {
-          parts: [{ text: SYSTEM_PROMPT }],
-        },
-        contents,
-        generationConfig: {
+        model: GEMINI_MODEL,
+        input,
+        store: false,
+        system_instruction: SYSTEM_PROMPT,
+        generation_config: {
           temperature: 0.7,
-          maxOutputTokens: 2048,
+          max_output_tokens: 2048,
         },
       },
       {
@@ -289,8 +292,10 @@ async function askAI(userId, prompt, authorName = "User") {
       }
     );
 
-    const answer = (data?.candidates?.[0]?.content?.parts || [])
-      .map((part) => part.text || "")
+    const answer = (data?.steps || [])
+      .filter((step) => step.type === "model_output")
+      .flatMap((step) => step.content || [])
+      .map((content) => content.text || "")
       .join("")
       .trim();
 
@@ -301,8 +306,11 @@ async function askAI(userId, prompt, authorName = "User") {
   } catch (e) {
     const status = e.response?.status;
     const detail = e.response?.data?.error?.message || e.message;
-    console.error("Gemini error:", status || "-", detail);
+    console.error("Gemini Interactions API error:", status || "-", detail);
 
+    if (status === 404) {
+      return "Maaf, model Gemini yang dipilih belum tersedia. Hubungi admin ya.";
+    }
     if (status === 429) {
       return "Maaf, layanan AI sedang mencapai batas penggunaan. Coba lagi beberapa saat ya.";
     }
