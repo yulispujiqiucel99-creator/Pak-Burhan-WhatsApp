@@ -19,12 +19,8 @@ const fs = require("fs");
 const path = require("path");
 
 const BOT_NUMBER = (process.env.BOT_NUMBER || "").replace(/\D/g, "");
-const OPENROUTER_API_KEYS = (process.env.OPENROUTER_API_KEYS || "")
-  .split(",")
-  .map((k) => k.trim())
-  .filter(Boolean);
-const AI_MODEL =
-  process.env.AI_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free";
+const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || "").trim();
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
 const PREFIX = process.env.PREFIX || "!";
 const AUTH_METHOD = (process.env.AUTH_METHOD || "qr").toLowerCase();
@@ -256,57 +252,65 @@ function formatSearchResults(results) {
   return lines.join("\n");
 }
 
-let currentKeyIndex = 0;
-
 async function askAI(userId, prompt, authorName = "User") {
-  if (!OPENROUTER_API_KEYS.length) {
-    return "Waduh, API key belum diatur. Hubungi admin ya.";
+  if (!GEMINI_API_KEY) {
+    return "Waduh, GEMINI_API_KEY belum diatur. Hubungi admin ya.";
   }
 
   const history = MEMORY[userId] || [];
-  const messages = [{ role: "system", content: SYSTEM_PROMPT }];
-  for (const item of history) {
-    messages.push({ role: item.role, content: item.text });
-  }
-  messages.push({ role: "user", content: `[${authorName}]: ${prompt}` });
+  const contents = history.map((item) => ({
+    role: item.role === "assistant" ? "model" : "user",
+    parts: [{ text: item.text }],
+  }));
+  contents.push({
+    role: "user",
+    parts: [{ text: `[${authorName}]: ${prompt}` }],
+  });
 
-  let lastError = null;
-  const total = OPENROUTER_API_KEYS.length;
-
-  for (let i = 0; i < total; i++) {
-    const key = OPENROUTER_API_KEYS[currentKeyIndex % total];
-    try {
-      const { data } = await axios.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        {
-          model: AI_MODEL,
-          messages,
-          temperature: 0.7,
-          max_tokens: 2048,
+  try {
+    const { data } = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent`,
+      {
+        systemInstruction: {
+          parts: [{ text: SYSTEM_PROMPT }],
         },
-        {
-          headers: {
-            Authorization: `Bearer ${key}`,
-            "HTTP-Referer": "https://openrouter.ai/",
-            "X-Title": "Pak Burhan WhatsApp Bot",
-            "Content-Type": "application/json",
-          },
-          timeout: 60000,
-        }
-      );
-      const answer =
-        data?.choices?.[0]?.message?.content?.trim() ||
-        "Maaf, Pak Burhan belum mendapat jawaban yang jelas. Coba ulangi ya.";
-      return answer.slice(0, 3500);
-    } catch (e) {
-      lastError = e;
-      console.warn(`Key index ${currentKeyIndex} gagal:`, e.message);
-      currentKeyIndex = (currentKeyIndex + 1) % total;
-    }
-  }
+        contents,
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 2048,
+        },
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": GEMINI_API_KEY,
+        },
+        timeout: 60000,
+      }
+    );
 
-  console.error("Semua key gagal:", lastError?.message);
-  return "Maaf, sedang ada gangguan. Coba lagi sebentar ya.";
+    const answer = (data?.candidates?.[0]?.content?.parts || [])
+      .map((part) => part.text || "")
+      .join("")
+      .trim();
+
+    return (
+      answer.slice(0, 3500) ||
+      "Maaf, Pak Burhan belum mendapat jawaban yang jelas. Coba ulangi ya."
+    );
+  } catch (e) {
+    const status = e.response?.status;
+    const detail = e.response?.data?.error?.message || e.message;
+    console.error("Gemini error:", status || "-", detail);
+
+    if (status === 429) {
+      return "Maaf, layanan AI sedang mencapai batas penggunaan. Coba lagi beberapa saat ya.";
+    }
+    if (status === 401 || status === 403) {
+      return "Maaf, konfigurasi API Gemini belum valid. Hubungi admin ya.";
+    }
+    return "Maaf, sedang ada gangguan. Coba lagi sebentar ya.";
+  }
 }
 
 const cooldown = new Map();
@@ -423,8 +427,8 @@ async function startBot() {
     console.error("AUTH_METHOD=pairing membutuhkan BOT_NUMBER di .env");
     process.exit(1);
   }
-  if (!OPENROUTER_API_KEYS.length) {
-    console.warn("OPENROUTER_API_KEYS masih kosong!");
+  if (!GEMINI_API_KEY) {
+    console.warn("GEMINI_API_KEY masih kosong!");
   }
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);

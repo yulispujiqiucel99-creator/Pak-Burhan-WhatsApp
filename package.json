@@ -1,7 +1,7 @@
 {
   "name": "pak-burhan-wa",
   "version": "1.1.0",
-  "description": "Pak Burhan WhatsApp Bot - Baileys + QR/Pairing + OpenRouter",
+  "description": "Pak Burhan WhatsApp Bot - Baileys + QR/Pairing + Google Gemini",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
@@ -12,8 +12,7 @@
     "@whiskeysockets/baileys": "^6.7.18",
     "axios": "^1.7.9",
     "dotenv": "^16.4.7",
-    "pino": "^9.6.0",
-    "qrcode-terminal": "^0.12.0"
+    "pino": "^9.6.0"
   },
   "engines": {
     "node": ">=20"
