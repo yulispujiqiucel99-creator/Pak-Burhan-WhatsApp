@@ -54,10 +54,11 @@ Kepribadian:
 
 Gaya Berbicara:
 - Gunakan bahasa Indonesia yang santai namun sopan ala bapak-bapak guru.
-- Selalu sisipkan frasa khas bapak-bapak seperti "nah", "nah gitu", "coba kita lihat", "jadi begini ya", atau "pelan-pelan ya".
-- Jangan terlalu kaku dan formal, tapi hindari penggunaan emoji yang berlebihan (maksimal 1-2 emoji per pesan).
-- Sapa pengguna laki-laki dengan "mas" dan perempuan dengan "mbak".
+- Selalu sisipkan frasa khas bapak-bapak seperti "nah", "nah gitu", "coba kita lihat", "jadi begini ya", atau "pelan-pelan ya" secara wajar.
+- Gunakan 1-2 emoji yang relevan dan ceria pada jawaban umum, misalnya 🙂, 📚, ⏰, atau 👍. Hindari emoji untuk situasi serius atau sensitif.
+- Sapa pengguna laki-laki dengan "Mas" dan perempuan dengan "Mbak".
 - Gunakan nama, gender, dan panggilan pengguna yang diberikan dalam konteks profil. Jangan menebak gender atau mengganti panggilan tersebut.
+- Jangan pernah memanggil pengguna dengan "Nak Pak Burhan", "Pak Burhan", atau variasi sejenis. "Pak Burhan" hanya nama bot, bukan nama pengguna.
 - Jangan terlalu sering memanggil "nak", gunakan panggilan ini HANYA saat memberikan nasihat serius.
 
 Aturan Utama & Moderasi:
@@ -198,10 +199,14 @@ function detectGender(text) {
 
 function extractName(text) {
   const original = String(text || "").trim();
-  const explicitName = original.match(
+  const cleanedOriginal = original.replace(
+    /^(?:iya|ya|hmm|eh|halo|hai|bro|mas|mbak|nak)[\s,!.]*/i,
+    ""
+  );
+  const explicitName = cleanedOriginal.match(
     /^(?:nama(?:\s+saya)?|namaku|panggil(?:\s+saya)?|saya)\s*(?:adalah|itu|:|-)?\s*(.+)$/i
   );
-  let candidate = explicitName ? explicitName[1] : original;
+  let candidate = explicitName ? explicitName[1] : cleanedOriginal;
   candidate = candidate
     .replace(/\b(laki(?:-?laki)?|pria|cowok|lelaki|male|perempuan|wanita|cewek|female)\b.*$/i, "")
     .replace(/[^\p{L}\s'.-]/gu, " ")
@@ -230,6 +235,16 @@ function extractName(text) {
 function getProfileGreeting(profile) {
   const honorific = profile.gender === "female" ? "Mbak" : "Mas";
   return `${honorific} ${profile.name}`;
+}
+
+function isTimeQuestion(text) {
+  return /\b(jam(?:\s+sekarang)?|pukul\s+berapa|sekarang\s+jam|waktu\s+sekarang)\b/i.test(
+    String(text || "")
+  );
+}
+
+function getTimeReply(profile) {
+  return `${getProfileGreeting(profile)}, sekarang ${getCurrentDateTime()}. ⏰`;
 }
 
 function processProfileOnboarding(profileId, text) {
@@ -407,7 +422,7 @@ async function askAI(userId, prompt, profile) {
   }
 
   const profileGreeting = getProfileGreeting(profile);
-  const systemPromptWithTime = `${SYSTEM_PROMPT}\n\nProfil pengguna saat ini:\n- Nama: ${profile.name}\n- Gender: ${profile.gender === "female" ? "perempuan" : "laki-laki"}\n- Panggilan wajib: ${profileGreeting}\nGunakan panggilan tersebut dengan tepat; jangan menebak atau menggantinya.\n\nInformasi waktu saat ini:\n- Zona waktu acuan: ${BOT_TIMEZONE}\n- Tanggal dan jam saat ini: ${getCurrentDateTime()}\nGunakan informasi ini saat menjawab pertanyaan yang berkaitan dengan hari, tanggal, bulan, tahun, atau jam. Jangan mengarang waktu yang berbeda.`;
+  const systemPromptWithTime = `${SYSTEM_PROMPT}\n\nProfil pengguna saat ini:\n- Nama: ${profile.name}\n- Gender: ${profile.gender === "female" ? "perempuan" : "laki-laki"}\n- Panggilan wajib dan satu-satunya: ${profileGreeting}\nSelalu gunakan panggilan tersebut secara utuh bila menyapa pengguna. Jangan memakai panggilan lain, jangan mengubah nama, dan jangan memanggil pengguna dengan nama bot.\n\nAturan kualitas jawaban:\n- Jawab inti pertanyaan terlebih dahulu dengan kalimat yang jelas dan lengkap, baru tambahkan penjelasan bila diperlukan.\n- Untuk pertanyaan waktu, sebutkan hari, tanggal, dan jam yang diberikan di bawah ini secara langsung; jangan menyuruh pengguna mengecek ponsel.\n- Gunakan 1-2 emoji relevan untuk jawaban umum agar ramah dan ceria, tetapi jangan berlebihan.\n\nInformasi waktu saat ini:\n- Zona waktu acuan: ${BOT_TIMEZONE}\n- Tanggal dan jam saat ini: ${getCurrentDateTime()}\nGunakan informasi ini saat menjawab pertanyaan yang berkaitan dengan hari, tanggal, bulan, tahun, atau jam. Jangan mengarang waktu yang berbeda.`;
   const history = MEMORY[userId] || [];
   const messages = [
     { role: "system", content: systemPromptWithTime },
@@ -664,6 +679,20 @@ async function handleMessage(sock, msg) {
 
         const conversationId = isGroup ? `group:${jid}:${senderId}` : `private:${senderId}`;
     const profileId = `user:${senderId}`;
+    const lower = text.toLowerCase().trim();
+    if (lower === `${PREFIX}profil ulang` || lower === `${PREFIX}reset profil`) {
+      delete PROFILES[profileId];
+      delete MEMORY[conversationId];
+      markDirty();
+      saveProfiles();
+      await sock.sendMessage(
+        jid,
+        { text: "Profil sudah dihapus. Tulis nama kamu terlebih dahulu ya, misalnya: Naufal." },
+        { quoted: msg }
+      );
+      return;
+    }
+
     const onboarding = processProfileOnboarding(profileId, text);
     if (!onboarding.ready) {
       await sock.sendMessage(jid, { text: onboarding.reply }, { quoted: msg });
@@ -676,11 +705,9 @@ async function handleMessage(sock, msg) {
       return;
     }
     cooldown.set(conversationId, now);
-    console.log(`[${isGroup ? "G" : "P"}][${senderId}] ${text.slice(0, 80)}`);
-
-    const lower = text.toLowerCase().trim();
-
+        console.log(`[${isGroup ? "G" : "P"}][${senderId}] ${text.slice(0, 80)}`);
     if (
+
       lower === `${PREFIX}help` ||
       lower === `${PREFIX}menu` ||
       lower === "help" ||
@@ -691,12 +718,18 @@ async function handleMessage(sock, msg) {
       return;
     }
 
-    if (isRude(text)) {
-      await sock.sendMessage(jid, { text: POLITE_TOXIC_REPLY }, { quoted: msg });
-      saveTurn(conversationId, text, POLITE_TOXIC_REPLY);
+        if (isRude(text)) {
+      const politeReply = `Nah, ${getProfileGreeting(profile)}. Saya ini Pak Burhan, wali kelas 7D. Biasakan berbicara dengan sopan ya di WhatsApp. Setelah itu baru kita lanjutkan.`;
+      await sock.sendMessage(jid, { text: politeReply }, { quoted: msg });
+      saveTurn(conversationId, text, politeReply);
       return;
     }
-
+    if (isTimeQuestion(text)) {
+      const timeReply = getTimeReply(profile);
+      await sock.sendMessage(jid, { text: timeReply }, { quoted: msg });
+      saveTurn(conversationId, text, timeReply);
+      return;
+    }
     let finalPrompt = text;
     if (
       lower.startsWith(`${PREFIX}cari `) ||
