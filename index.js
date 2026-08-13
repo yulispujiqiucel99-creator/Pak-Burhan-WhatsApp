@@ -19,7 +19,14 @@ const fs = require("fs");
 const path = require("path");
 
 const BOT_NUMBER = (process.env.BOT_NUMBER || "").replace(/\D/g, "");
-const GROQ_API_KEY = (process.env.GROQ_API_KEY || "").trim();
+const GROQ_API_KEYS = [...new Set(
+  [
+    ...(process.env.GROQ_API_KEYS || "").split(","),
+    process.env.GROQ_API_KEY || "",
+  ]
+    .map((key) => key.trim())
+    .filter(Boolean)
+)];
 const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.1-8b-instant";
 const GROQ_BASE_URL = (process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1").replace(/\/+$/, "");
 const PRIVATE_ALLOWED_LID = (process.env.PRIVATE_ALLOWED_LID || "").replace(/\D/g, "");
@@ -27,6 +34,7 @@ const BOT_TIMEZONE = process.env.BOT_TIMEZONE || "Asia/Jakarta";
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
 const PREFIX = process.env.PREFIX || "!";
 const AUTH_METHOD = (process.env.AUTH_METHOD || "qr").toLowerCase();
+let activeGroqKeyIndex = 0;
 
 const AUTH_DIR = path.join(__dirname, "auth_info");
 const DATA_DIR = path.join(__dirname, "data");
@@ -277,8 +285,8 @@ function getCurrentDateTime() {
 }
 
 async function askAI(userId, prompt, authorName = "User") {
-  if (!GROQ_API_KEY) {
-    return "Waduh, GROQ_API_KEY belum diatur. Hubungi admin ya.";
+  if (!GROQ_API_KEYS.length) {
+    return "Waduh, GROQ_API_KEYS belum diatur. Hubungi admin ya.";
   }
 
   const systemPromptWithTime = `${SYSTEM_PROMPT}\n\nInformasi waktu saat ini:\n- Zona waktu acuan: ${BOT_TIMEZONE}\n- Tanggal dan jam saat ini: ${getCurrentDateTime()}\nGunakan informasi ini saat menjawab pertanyaan yang berkaitan dengan hari, tanggal, bulan, tahun, atau jam. Jangan mengarang waktu yang berbeda.`;
@@ -292,46 +300,63 @@ async function askAI(userId, prompt, authorName = "User") {
     { role: "user", content: `[${authorName}]: ${prompt}` },
   ];
 
-  try {
-    const { data } = await axios.post(
-      `${GROQ_BASE_URL}/chat/completions`,
-      {
-        model: GROQ_MODEL,
-        messages,
-        temperature: 0.7,
-        max_completion_tokens: 1024,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${GROQ_API_KEY}`,
-          "Content-Type": "application/json",
+  let lastError;
+  for (let attempt = 0; attempt < GROQ_API_KEYS.length; attempt += 1) {
+    const keyIndex = (activeGroqKeyIndex + attempt) % GROQ_API_KEYS.length;
+    const apiKey = GROQ_API_KEYS[keyIndex];
+
+    try {
+      const { data } = await axios.post(
+        `${GROQ_BASE_URL}/chat/completions`,
+        {
+          model: GROQ_MODEL,
+          messages,
+          temperature: 0.7,
+          max_completion_tokens: 1024,
         },
-        timeout: 60000,
+        {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          timeout: 60000,
+        }
+      );
+
+      activeGroqKeyIndex = keyIndex;
+      const answer = data?.choices?.[0]?.message?.content?.trim();
+      return (
+        answer?.slice(0, 3500) ||
+        "Maaf, Pak Burhan belum mendapat jawaban yang jelas. Coba ulangi ya."
+      );
+    } catch (error) {
+      lastError = error;
+      const status = error.response?.status;
+      const detail = error.response?.data?.error?.message || error.message;
+      console.error(`Groq API error pada key ${keyIndex + 1}/${GROQ_API_KEYS.length}:`, status || "-", detail);
+
+      if (status === 429 && attempt < GROQ_API_KEYS.length - 1) {
+        const nextKeyIndex = (keyIndex + 1) % GROQ_API_KEYS.length;
+        console.warn(`Batas Groq tercapai; mencoba key ${nextKeyIndex + 1}/${GROQ_API_KEYS.length}.`);
+        continue;
       }
-    );
-
-    const answer = data?.choices?.[0]?.message?.content?.trim();
-    return (
-      answer?.slice(0, 3500) ||
-      "Maaf, Pak Burhan belum mendapat jawaban yang jelas. Coba ulangi ya."
-    );
-  } catch (e) {
-    const status = e.response?.status;
-    const detail = e.response?.data?.error?.message || e.message;
-    console.error("Groq API error:", status || "-", detail);
-
-    if (status === 404) {
-      return "Maaf, model Groq yang dipilih belum tersedia. Hubungi admin ya.";
+      break;
     }
-    if (status === 429) {
-      return "Maaf, layanan AI sedang mencapai batas penggunaan. Coba lagi beberapa saat ya.";
-    }
-    if (status === 401 || status === 403) {
-      return "Maaf, konfigurasi API Groq belum valid. Hubungi admin ya.";
-    }
-    return "Maaf, sedang ada gangguan. Coba lagi sebentar ya.";
   }
+
+  const status = lastError?.response?.status;
+  if (status === 404) {
+    return "Maaf, model Groq yang dipilih belum tersedia. Hubungi admin ya.";
+  }
+  if (status === 429) {
+    return "Maaf, seluruh key Groq sedang mencapai batas penggunaan. Coba lagi beberapa saat ya.";
+  }
+  if (status === 401 || status === 403) {
+    return "Maaf, konfigurasi API Groq belum valid. Hubungi admin ya.";
+  }
+  return "Maaf, sedang ada gangguan. Coba lagi sebentar ya.";
 }
+
 
 const cooldown = new Map();
 const COOLDOWN_MS = 6000;
@@ -542,8 +567,10 @@ async function startBot() {
     console.error("AUTH_METHOD=pairing membutuhkan BOT_NUMBER di .env");
     process.exit(1);
   }
-  if (!GROQ_API_KEY) {
-    console.warn("GROQ_API_KEY masih kosong!");
+  if (!GROQ_API_KEYS.length) {
+    console.warn("GROQ_API_KEYS masih kosong!");
+  } else {
+    console.log(`Groq key aktif: 1 dari ${GROQ_API_KEYS.length} key tersedia.`);
   }
   if (!PRIVATE_ALLOWED_LID) {
     console.warn("PRIVATE_ALLOWED_LID masih kosong; semua chat privat akan diabaikan.");

@@ -14,7 +14,7 @@ cp .env.example .env
 npm start
 ```
 
-Isi `GROQ_API_KEY` pada `.env` sebelum menjalankan bot. API key dibuat dari [Groq Console](https://console.groq.com/keys); jangan pernah menyimpan key asli ke repository.
+Isi `GROQ_API_KEYS` pada `.env` sebelum menjalankan bot. API key dibuat dari [Groq Console](https://console.groq.com/keys); jangan pernah menyimpan key asli ke repository.
 
 ## Variabel Lingkungan
 
@@ -22,7 +22,8 @@ Isi `GROQ_API_KEY` pada `.env` sebelum menjalankan bot. API key dibuat dari [Gro
 |---|---|
 | `AUTH_METHOD` | `qr` sebagai default, atau `pairing`. |
 | `BOT_NUMBER` | Wajib untuk metode `pairing`; gunakan format `628...`. |
-| `GROQ_API_KEY` | API key Groq dari Groq Console. Wajib untuk chat AI. |
+| `GROQ_API_KEYS` | Satu atau beberapa API key Groq, dipisahkan koma. Saat error 429, bot mencoba key berikutnya secara otomatis. |
+| `GROQ_API_KEY` | Kompatibilitas untuk konfigurasi lama dengan satu key; lebih disarankan memakai `GROQ_API_KEYS`. |
 | `GROQ_MODEL` | Default `llama-3.1-8b-instant`; ganti hanya ke model Groq yang tersedia untuk akun Anda. |
 | `GROQ_BASE_URL` | Default `https://api.groq.com/openai/v1`; biasanya tidak perlu diubah. |
 | `PRIVATE_ALLOWED_LID` | Satu-satunya LID yang dapat mengirim chat pribadi ke bot; gunakan `235656601194672` atau `[235656601194672]`. Jika kosong, seluruh chat pribadi diabaikan. |
@@ -42,4 +43,4 @@ Untuk menghubungkan nomor WhatsApp yang berbeda, hapus folder `auth_info` pada v
 
 ## Penanganan Error Groq
 
-Bot memakai **Groq Chat Completions API**, menyimpan maksimal **4 putaran** percakapan sebagai konteks agar penggunaan token lebih terkendali, dan menyertakan tanggal serta jam terkini sesuai `BOT_TIMEZONE` pada setiap permintaan AI. Riwayat privat dan riwayat grup dipisahkan menurut sumber chat sehingga konteks chat privat tidak dipakai pada grup. Bot menampilkan pesan yang lebih jelas jika Groq membalas kode **404** karena model tidak tersedia, kode **429** karena batas penggunaan, atau kode **401/403** karena `GROQ_API_KEY` tidak valid. Detail kesalahan API dicatat pada log Railway agar konfigurasi dapat diperiksa tanpa membocorkan API key ke chat.
+Bot memakai **Groq Chat Completions API**, menyimpan maksimal **4 putaran** percakapan sebagai konteks agar penggunaan token lebih terkendali, dan menyertakan tanggal serta jam terkini sesuai `BOT_TIMEZONE` pada setiap permintaan AI. Riwayat privat dan riwayat grup dipisahkan menurut sumber chat sehingga konteks chat privat tidak dipakai pada grup. Jika Groq membalas **429**, bot mencoba key berikutnya dari `GROQ_API_KEYS` tanpa menuliskan rahasia ke log. Pesan yang jelas tetap ditampilkan untuk kode **404**, **429**, dan **401/403**. Detail kesalahan API dicatat pada log Railway agar konfigurasi dapat diperiksa tanpa membocorkan API key ke chat.
