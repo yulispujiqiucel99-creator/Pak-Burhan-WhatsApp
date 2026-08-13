@@ -343,6 +343,16 @@ function normalizeJidNumber(jid) {
     .replace(/\D/g, "");
 }
 
+function getJidDomain(jid) {
+  return String(jid || "").split("@")[1] || "";
+}
+
+function getSenderNumber(msg) {
+  const key = msg.key || {};
+  const senderPn = key.participantPn || key.senderPn;
+  return normalizeJidNumber(senderPn || key.participant || key.remoteJid);
+}
+
 function getMentionedJids(msg) {
   const message = msg.message || {};
   return [
@@ -355,11 +365,28 @@ function getMentionedJids(msg) {
     .filter(Boolean);
 }
 
+function getBotIdentityJids(sock) {
+  return [sock.user?.id, sock.user?.jid, sock.user?.lid].filter(Boolean);
+}
+
+function areSameMentionIdentity(firstJid, secondJid) {
+  if (!firstJid || !secondJid) return false;
+  if (String(firstJid) === String(secondJid)) return true;
+
+  const firstDomain = getJidDomain(firstJid);
+  const secondDomain = getJidDomain(secondJid);
+  return (
+    firstDomain === "s.whatsapp.net" &&
+    secondDomain === "s.whatsapp.net" &&
+    normalizeJidNumber(firstJid) === normalizeJidNumber(secondJid)
+  );
+}
+
 function isBotMentioned(msg, sock) {
-  const botNumber = normalizeJidNumber(sock.user?.id);
-  if (!botNumber) return false;
-  return getMentionedJids(msg).some(
-    (mentionedJid) => normalizeJidNumber(mentionedJid) === botNumber
+  const mentions = getMentionedJids(msg);
+  const botIdentities = getBotIdentityJids(sock);
+  return mentions.some((mentionedJid) =>
+    botIdentities.some((botJid) => areSameMentionIdentity(mentionedJid, botJid))
   );
 }
 
@@ -387,8 +414,7 @@ async function handleMessage(sock, msg) {
       msg.message.imageMessage?.caption ||
       "";
 
-    const sender = msg.key.participant || jid;
-    const userId = normalizeJidNumber(sender);
+    const userId = getSenderNumber(msg);
     if (!isGroup && userId !== PRIVATE_ALLOWED_NUMBER) {
       console.log(`[P][${userId || "unknown"}] pesan privat diabaikan: nomor tidak diizinkan`);
       return;
@@ -397,7 +423,15 @@ async function handleMessage(sock, msg) {
     if (!text.trim()) return;
 
     if (isGroup) {
-      if (!isBotMentioned(msg, sock)) return;
+      if (!isBotMentioned(msg, sock)) {
+        if (text.includes("@")) {
+          console.log("[G] mention tidak cocok", {
+            mentions: getMentionedJids(msg),
+            botIdentities: getBotIdentityJids(sock),
+          });
+        }
+        return;
+      }
       text = cleanMentions(text);
       if (!text) {
         await sock.sendMessage(
