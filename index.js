@@ -22,7 +22,7 @@ const BOT_NUMBER = (process.env.BOT_NUMBER || "").replace(/\D/g, "");
 const GROQ_API_KEY = (process.env.GROQ_API_KEY || "").trim();
 const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.1-8b-instant";
 const GROQ_BASE_URL = (process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1").replace(/\/+$/, "");
-const PRIVATE_ALLOWED_NUMBER = (process.env.PRIVATE_ALLOWED_NUMBER || "").replace(/\D/g, "");
+const PRIVATE_ALLOWED_LID = (process.env.PRIVATE_ALLOWED_LID || "").replace(/\D/g, "");
 const BOT_TIMEZONE = process.env.BOT_TIMEZONE || "Asia/Jakarta";
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
 const PREFIX = process.env.PREFIX || "!";
@@ -353,8 +353,33 @@ function getSenderNumber(msg) {
   return normalizeJidNumber(senderPn || key.participant || key.remoteJid);
 }
 
+function getSenderLid(msg) {
+  const key = msg.key || {};
+  const senderLid = key.participantLid || key.senderLid;
+  const fallbackJid = key.participant || key.remoteJid;
+  return normalizeJidNumber(
+    senderLid || (getJidDomain(fallbackJid) === "lid" ? fallbackJid : "")
+  );
+}
+
+function normalizeMessageContent(content) {
+  let message = content || {};
+  for (let i = 0; i < 5; i += 1) {
+    const wrapper =
+      message.ephemeralMessage ||
+      message.viewOnceMessage ||
+      message.documentWithCaptionMessage ||
+      message.viewOnceMessageV2 ||
+      message.viewOnceMessageV2Extension ||
+      message.editedMessage;
+    if (!wrapper?.message) break;
+    message = wrapper.message;
+  }
+  return message;
+}
+
 function getMentionedJids(msg) {
-  const message = msg.message || {};
+  const message = normalizeMessageContent(msg.message);
   return [
     message.extendedTextMessage?.contextInfo?.mentionedJid,
     message.imageMessage?.contextInfo?.mentionedJid,
@@ -366,7 +391,14 @@ function getMentionedJids(msg) {
 }
 
 function getBotIdentityJids(sock) {
-  return [sock.user?.id, sock.user?.jid, sock.user?.lid].filter(Boolean);
+  return [
+    sock.user?.id,
+    sock.user?.jid,
+    sock.user?.lid,
+    sock.authState?.creds?.me?.id,
+    sock.authState?.creds?.me?.jid,
+    sock.authState?.creds?.me?.lid,
+  ].filter(Boolean);
 }
 
 function areSameMentionIdentity(firstJid, secondJid) {
@@ -408,28 +440,35 @@ async function handleMessage(sock, msg) {
 
     const isGroup = isJidGroup(jid);
 
+    const messageContent = normalizeMessageContent(msg.message);
     let text =
-      msg.message.conversation ||
-      msg.message.extendedTextMessage?.text ||
-      msg.message.imageMessage?.caption ||
+      messageContent.conversation ||
+      messageContent.extendedTextMessage?.text ||
+      messageContent.imageMessage?.caption ||
+      messageContent.videoMessage?.caption ||
+      messageContent.documentMessage?.caption ||
       "";
 
-    const userId = getSenderNumber(msg);
-    if (!isGroup && userId !== PRIVATE_ALLOWED_NUMBER) {
-      console.log(`[P][${userId || "unknown"}] pesan privat diabaikan: nomor tidak diizinkan`);
+    const senderLid = getSenderLid(msg);
+    const senderNumber = getSenderNumber(msg);
+    const senderId = senderLid || senderNumber || "unknown";
+    if (!isGroup && senderLid !== PRIVATE_ALLOWED_LID) {
+      console.log(`[P][${senderLid || "unknown"}] pesan privat diabaikan: LID tidak diizinkan`);
       return;
     }
 
     if (!text.trim()) return;
 
     if (isGroup) {
+      const mentions = getMentionedJids(msg);
+      const botIdentities = getBotIdentityJids(sock);
       if (!isBotMentioned(msg, sock)) {
-        if (text.includes("@")) {
-          console.log("[G] mention tidak cocok", {
-            mentions: getMentionedJids(msg),
-            botIdentities: getBotIdentityJids(sock),
-          });
-        }
+        console.log("[G] mention tidak cocok", {
+          group: jid,
+          mentions,
+          botIdentities,
+          hasTextMention: text.includes("@"),
+        });
         return;
       }
       text = cleanMentions(text);
@@ -445,15 +484,14 @@ async function handleMessage(sock, msg) {
       }
     }
 
-    const pushName = msg.pushName || "User";
-
+        const pushName = msg.pushName || "User";
+    const conversationId = isGroup ? `group:${jid}:${senderId}` : `private:${senderId}`;
     const now = Date.now();
-    if (cooldown.has(userId) && now - cooldown.get(userId) < COOLDOWN_MS) {
+    if (cooldown.has(conversationId) && now - cooldown.get(conversationId) < COOLDOWN_MS) {
       return;
     }
-    cooldown.set(userId, now);
-
-    console.log(`[${isGroup ? "G" : "P"}][${userId}] ${text.slice(0, 80)}`);
+    cooldown.set(conversationId, now);
+    console.log(`[${isGroup ? "G" : "P"}][${senderId}] ${text.slice(0, 80)}`);
 
     const lower = text.toLowerCase().trim();
 
@@ -464,13 +502,13 @@ async function handleMessage(sock, msg) {
       lower === "menu"
     ) {
       await sock.sendMessage(jid, { text: HELP_TEXT }, { quoted: msg });
-      saveTurn(userId, text, HELP_TEXT);
+      saveTurn(conversationId, text, HELP_TEXT);
       return;
     }
 
     if (isRude(text)) {
       await sock.sendMessage(jid, { text: POLITE_TOXIC_REPLY }, { quoted: msg });
-      saveTurn(userId, text, POLITE_TOXIC_REPLY);
+      saveTurn(conversationId, text, POLITE_TOXIC_REPLY);
       return;
     }
 
@@ -488,9 +526,9 @@ async function handleMessage(sock, msg) {
     }
 
     await sock.sendPresenceUpdate("composing", jid).catch(() => {});
-    const reply = await askAI(userId, finalPrompt, pushName);
+    const reply = await askAI(conversationId, finalPrompt, pushName);
     await sock.sendMessage(jid, { text: reply }, { quoted: msg });
-    saveTurn(userId, text, reply);
+    saveTurn(conversationId, text, reply);
   } catch (e) {
     console.error("handleMessage error:", e.message);
   }
@@ -507,8 +545,8 @@ async function startBot() {
   if (!GROQ_API_KEY) {
     console.warn("GROQ_API_KEY masih kosong!");
   }
-  if (!PRIVATE_ALLOWED_NUMBER) {
-    console.warn("PRIVATE_ALLOWED_NUMBER masih kosong; semua chat privat akan diabaikan.");
+  if (!PRIVATE_ALLOWED_LID) {
+    console.warn("PRIVATE_ALLOWED_LID masih kosong; semua chat privat akan diabaikan.");
   }
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
