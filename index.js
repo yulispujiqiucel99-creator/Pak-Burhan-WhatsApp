@@ -432,9 +432,11 @@ function areSameMentionIdentity(firstJid, secondJid) {
 
   const firstDomain = getJidDomain(firstJid);
   const secondDomain = getJidDomain(secondJid);
+  const isComparableDomain =
+    (firstDomain === "s.whatsapp.net" && secondDomain === "s.whatsapp.net") ||
+    (firstDomain === "lid" && secondDomain === "lid");
   return (
-    firstDomain === "s.whatsapp.net" &&
-    secondDomain === "s.whatsapp.net" &&
+    isComparableDomain &&
     normalizeJidNumber(firstJid) === normalizeJidNumber(secondJid)
   );
 }
