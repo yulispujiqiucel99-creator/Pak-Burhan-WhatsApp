@@ -30,6 +30,7 @@ values (
       jsonb_build_object('command', 'Tag di grup', 'description', 'Tag bot lalu tulis pertanyaan; bot diam pada @semua atau @everyone.')
     )
   )
+)
 on conflict (id) do nothing;
 
 create or replace function public.set_bot_settings_updated_at()
