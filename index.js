@@ -17,7 +17,6 @@ const pino = require("pino");
 const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
-const qrcode = require("qrcode-terminal");
 
 const BOT_NUMBER = (process.env.BOT_NUMBER || "").replace(/\D/g, "");
 const OPENROUTER_API_KEYS = (process.env.OPENROUTER_API_KEYS || "")
@@ -451,9 +450,12 @@ async function startBot() {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr && AUTH_METHOD !== "pairing") {
+      const qrLink = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(qr)}`;
+
       console.log("\n========== SCAN QR CODE ==========");
-      qrcode.generate(qr, { small: true });
-      console.log("Scan QR di atas lewat WhatsApp → Perangkat Tertaut");
+      console.log("Buka link berikut untuk menampilkan QR:");
+      console.log(qrLink);
+      console.log("Lalu scan lewat WhatsApp → Perangkat Tertaut");
       console.log("==================================\n");
     }
 
