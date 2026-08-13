@@ -447,6 +447,25 @@ function isBotMentioned(msg, sock) {
   );
 }
 
+function hasBotTextMention(text, sock) {
+  const botNumbers = [...new Set(
+    getBotIdentityJids(sock)
+      .map((jid) => normalizeJidNumber(jid))
+      .filter(Boolean)
+  )];
+  const messageText = String(text || "");
+  return botNumbers.some((botNumber) => {
+    const mentionPattern = new RegExp(`(^|\\s)@${botNumber}(?=\\s|$|[,.!?;:])`);
+    return mentionPattern.test(messageText);
+  });
+}
+
+function getBotMentionSource(msg, sock, text) {
+  if (isBotMentioned(msg, sock)) return "metadata";
+  if (hasBotTextMention(text, sock)) return "teks";
+  return null;
+}
+
 function cleanMentions(text) {
   return (text || "")
     .replace(/@\d{5,16}/g, "")
@@ -487,7 +506,8 @@ async function handleMessage(sock, msg) {
     if (isGroup) {
       const mentions = getMentionedJids(msg);
       const botIdentities = getBotIdentityJids(sock);
-      if (!isBotMentioned(msg, sock)) {
+      const mentionSource = getBotMentionSource(msg, sock, text);
+      if (!mentionSource) {
         console.log("[G] mention tidak cocok", {
           group: jid,
           mentions,
@@ -495,6 +515,9 @@ async function handleMessage(sock, msg) {
           hasTextMention: text.includes("@"),
         });
         return;
+      }
+      if (mentionSource === "teks") {
+        console.log("[G] mention bot terdeteksi dari teks karena metadata kosong.");
       }
       text = cleanMentions(text);
       if (!text) {
