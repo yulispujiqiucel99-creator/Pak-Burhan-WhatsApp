@@ -89,7 +89,8 @@ const HELP_TEXT = `Nah, ini daftar yang bisa kamu pakai ya:
    Kalau kamu bilang "carikan...", "cari berita...", "tolong cari..."
    otomatis akan dicari di internet.
 
-Di grup: sebut / tag bot dulu supaya tidak spam.
+Di grup: gunakan format @bot diikuti pertanyaan, supaya tidak spam.
+Contoh: @Pak Burhan jadwal ulangan kapan?
 
 Ingat ya, berbicara yang sopan. Pak Burhan senang membantu yang sopan.`;
 
@@ -312,30 +313,41 @@ async function askAI(userId, prompt, authorName = "User") {
 const cooldown = new Map();
 const COOLDOWN_MS = 6000;
 
-function isBotMentioned(msg, sock, text) {
-  const botJid = sock.user?.id;
-  if (!botJid) return false;
+function normalizeJidNumber(jid) {
+  return String(jid || "")
+    .split("@")[0]
+    .split(":")[0]
+    .replace(/\D/g, "");
+}
 
-  const botNum = botJid.split(":")[0].split("@")[0];
-  const mentions =
-    msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+function getMentionedJids(msg) {
+  const message = msg.message || {};
+  return [
+    message.extendedTextMessage?.contextInfo?.mentionedJid,
+    message.imageMessage?.contextInfo?.mentionedJid,
+    message.videoMessage?.contextInfo?.mentionedJid,
+    message.documentMessage?.contextInfo?.mentionedJid,
+  ]
+    .flat()
+    .filter(Boolean);
+}
 
-  if (mentions.some((j) => String(j).includes(botNum))) return true;
-
-  const lower = (text || "").toLowerCase();
-  if (lower.includes("@") && lower.includes(botNum)) return true;
-  if (/\bpak\s*burhan\b/i.test(text || "")) return true;
-
-  return false;
+function isBotMentioned(msg, sock) {
+  const botNumber = normalizeJidNumber(sock.user?.id);
+  if (!botNumber) return false;
+  return getMentionedJids(msg).some(
+    (mentionedJid) => normalizeJidNumber(mentionedJid) === botNumber
+  );
 }
 
 function cleanMentions(text) {
   return (text || "")
-    .replace(/@\d+/g, "")
-    .replace(/\bpak\s*burhan\b/gi, "")
+    .replace(/@\d{5,16}/g, "")
+    .replace(/[\u200e\u200f]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
+
 
 async function handleMessage(sock, msg) {
   try {
@@ -354,12 +366,19 @@ async function handleMessage(sock, msg) {
 
     if (!text.trim()) return;
 
-    if (isGroup && !isBotMentioned(msg, sock, text)) {
-      return;
-    }
-
     if (isGroup) {
-      text = cleanMentions(text) || text;
+      if (!isBotMentioned(msg, sock)) return;
+      text = cleanMentions(text);
+      if (!text) {
+        await sock.sendMessage(
+          jid,
+          {
+            text: "Tulis pertanyaan setelah mention ya.\nContoh: @Pak Burhan jadwal ulangan kapan?",
+          },
+          { quoted: msg }
+        );
+        return;
+      }
     }
 
     const sender = msg.key.participant || jid;

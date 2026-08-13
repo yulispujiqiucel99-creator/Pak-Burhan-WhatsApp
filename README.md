@@ -4,7 +4,7 @@ Bot WhatsApp persona **Pak Burhan** sebagai wali kelas 7D. Proyek ini menggunaka
 
 ## Fitur
 
-Bot mendukung login melalui **QR Code** atau **Pairing Code**, percakapan AI dengan gaya Pak Burhan, memori percakapan, moderasi kata kasar, perintah `!help`, `!menu`, dan `!cari`, serta pencarian internet opsional melalui Tavily. Pada grup, bot hanya menjawab saat ditandai atau disebut “Pak Burhan”; pada chat pribadi, bot membalas semua pesan. Konfigurasi proyek dirancang untuk deployment Railway dengan volume persisten.
+Bot mendukung login melalui **QR Code** atau **Pairing Code**, percakapan AI dengan gaya Pak Burhan, memori percakapan, moderasi kata kasar, perintah `!help`, `!menu`, dan `!cari`, serta pencarian internet opsional melalui Tavily. Pada grup, bot hanya menjawab saat akun bot benar-benar di-mention dengan format **`@bot pertanyaan`**; pada chat pribadi, bot membalas semua pesan. Konfigurasi proyek dirancang untuk deployment Railway dengan volume persisten.
 
 ## Setup Lokal
 
@@ -32,7 +32,7 @@ Isi `GROQ_API_KEY` pada `.env` sebelum menjalankan bot. API key dibuat dari [Gro
 
 Hubungkan repository ini ke Railway, lalu isi seluruh variabel lingkungan yang diperlukan. Tambahkan **Volume** dengan titik mount `/app` agar folder `auth_info` dan `data` tetap tersimpan setelah deployment atau restart. Jalankan bot dengan perintah `node index.js`, atau gunakan Procfile worker yang tersedia.
 
-Setelah deployment, buka menu **Logs** Railway. Jika `AUTH_METHOD=qr`, log akan menampilkan tautan QR. Buka tautan tersebut, lalu pindai QR melalui WhatsApp pada menu **Perangkat Tertaut**. Jika menggunakan pairing, atur `BOT_NUMBER` dan masukkan kode pairing yang muncul di log.
+Setelah deployment, buka menu **Logs** Railway. Jika `AUTH_METHOD=qr`, log akan menampilkan tautan QR. Buka tautan tersebut, lalu pindai QR melalui WhatsApp pada menu **Perangkat Tertaut**. Jika menggunakan pairing, atur `BOT_NUMBER` dan masukkan kode pairing yang muncul di log. Di grup, gunakan format seperti **`@Pak Burhan jadwal ulangan kapan?`**; mention tanpa pertanyaan akan dibalas dengan contoh format yang benar.
 
 ## Login Ulang
 
