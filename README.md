@@ -24,16 +24,22 @@ Isi `GROQ_API_KEYS` pada `.env` sebelum menjalankan bot. API key dibuat dari [Gr
 | `BOT_NUMBER` | Wajib untuk metode `pairing`; gunakan format `628...`. |
 | `GROQ_API_KEYS` | Satu atau beberapa API key Groq, dipisahkan koma. Saat error 429, bot mencoba key berikutnya secara otomatis. |
 | `GROQ_API_KEY` | Kompatibilitas untuk konfigurasi lama dengan satu key; lebih disarankan memakai `GROQ_API_KEYS`. |
-| `GROQ_MODEL` | Default `llama-3.1-8b-instant`; ganti hanya ke model Groq yang tersedia untuk akun Anda. |
+| `GROQ_MODEL` | Fallback model `llama-3.1-8b-instant`; setelah Supabase aktif, model diedit pada kolom `settings`. |
 | `GROQ_BASE_URL` | Default `https://api.groq.com/openai/v1`; biasanya tidak perlu diubah. |
-| `PRIVATE_ALLOWED_LID` | Satu-satunya LID yang dapat mengirim chat pribadi ke bot; gunakan `235656601194672` atau `[235656601194672]`. Jika kosong, seluruh chat pribadi diabaikan. |
-| `BOT_TIMEZONE` | Zona waktu untuk konteks AI; default `Asia/Jakarta` (WIB). |
+| `SUPABASE_URL` | URL proyek Supabase yang menyimpan pengaturan bot. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service-role key Supabase untuk bot di Railway; rahasia dan tidak boleh dibagikan. |
+| `PRIVATE_ALLOWED_LID` | Fallback LID privat jika Supabase belum aktif; setelah aktif, edit `private_allowed_lid` di Supabase. |
+| `BOT_TIMEZONE` | Fallback zona waktu; setelah Supabase aktif, edit `timezone` di Supabase. |
 | `TAVILY_API_KEY` | Opsional; dipakai untuk fitur pencarian internet. |
 | `PREFIX` | Awalan perintah bot; default `!`. |
 
+## Pengaturan yang Dapat Diedit
+
+Pengaturan seperti nama bot, zona waktu, LID privat, model Groq, batas riwayat, mention massal, dan daftar `!help` dapat dikelola dari Supabase. Jalankan migrasi lalu ikuti panduan di [`supabase/README.md`](./supabase/README.md). Railway hanya menyimpan koneksi rahasia satu kali ke Supabase; perubahan pengaturan harian dilakukan dari dashboard Supabase.
+
 ## Deployment Railway
 
-Hubungkan repository ini ke Railway, lalu isi seluruh variabel lingkungan yang diperlukan. Untuk membatasi akses privat, isi `PRIVATE_ALLOWED_LID` dengan LID yang diizinkan; LID dapat ditulis sebagai angka saja atau diapit tanda kurung siku. Pesan privat dari LID lain akan diabaikan tanpa balasan. Tambahkan **Volume** dengan titik mount `/app` agar folder `auth_info` dan `data` tetap tersimpan setelah deployment atau restart. Jalankan bot dengan perintah `node index.js`, atau gunakan Procfile worker yang tersedia.
+Hubungkan repository ini ke Railway, lalu isi seluruh variabel lingkungan yang diperlukan. Untuk penggunaan normal setelah migrasi, tambahkan `SUPABASE_URL` dan `SUPABASE_SERVICE_ROLE_KEY` satu kali; pengaturan seperti LID privat dan zona waktu selanjutnya diedit dari Supabase. Tambahkan **Volume** dengan titik mount `/app` agar folder `auth_info` dan `data` tetap tersimpan setelah deployment atau restart. Jalankan bot dengan perintah `node index.js`, atau gunakan Procfile worker yang tersedia.
 
 Setelah deployment, buka menu **Logs** Railway. Jika `AUTH_METHOD=qr`, log akan menampilkan tautan QR. Buka tautan tersebut, lalu pindai QR melalui WhatsApp pada menu **Perangkat Tertaut**. Jika menggunakan pairing, atur `BOT_NUMBER` dan masukkan kode pairing yang muncul di log. Di grup, gunakan format seperti **`@Pak Burhan jadwal ulangan kapan?`**; mention tanpa pertanyaan akan dibalas dengan contoh format yang benar. Pada interaksi pertama, bot akan meminta **nama** dan **gender**; pertanyaan AI baru diproses setelah kedua data tersebut diberikan agar panggilannya tidak keliru. Jika nama atau gender pernah tersimpan salah, kirim **`!profil ulang`** agar bot menghapus profil dan meminta data kembali.
 

@@ -27,13 +27,16 @@ const GROQ_API_KEYS = [...new Set(
     .map((key) => key.trim())
     .filter(Boolean)
 )];
-const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.1-8b-instant";
+const DEFAULT_GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.1-8b-instant";
 const GROQ_BASE_URL = (process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1").replace(/\/+$/, "");
-const PRIVATE_ALLOWED_LID = (process.env.PRIVATE_ALLOWED_LID || "").replace(/\D/g, "");
-const BOT_TIMEZONE = process.env.BOT_TIMEZONE || "Asia/Jakarta";
+const DEFAULT_PRIVATE_ALLOWED_LID = (process.env.PRIVATE_ALLOWED_LID || "").replace(/\D/g, "");
+const DEFAULT_BOT_TIMEZONE = process.env.BOT_TIMEZONE || "Asia/Jakarta";
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
 const PREFIX = process.env.PREFIX || "!";
 const AUTH_METHOD = (process.env.AUTH_METHOD || "qr").toLowerCase();
+const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
+const SUPABASE_SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || "").trim();
+const SETTINGS_REFRESH_MS = 60 * 1000;
 let activeGroqKeyIndex = 0;
 
 const AUTH_DIR = path.join(__dirname, "auth_info");
@@ -85,30 +88,101 @@ const POLITE_TOXIC_REPLY =
   "Biasakan berbicara dengan sopan ya di WhatsApp. " +
   "Setelah itu baru kita lanjutkan.";
 
-const HELP_TEXT = `Nah, ini daftar yang bisa kamu pakai ya:
+const DEFAULT_COMMANDS = [
+  { command: "Chat biasa", description: "Kirim pertanyaan setelah profil nama dan gender lengkap." },
+  { command: `${PREFIX}help / ${PREFIX}menu`, description: "Menampilkan daftar perintah terbaru." },
+  { command: `${PREFIX}cari [pertanyaan]`, description: "Mencari informasi di internet sebelum menjawab." },
+  { command: `${PREFIX}profil ulang / ${PREFIX}reset profil`, description: "Menghapus nama, gender, dan riwayat chat Anda untuk diisi ulang." },
+  { command: "Tag di grup", description: "Tag bot lalu tulis pertanyaan; bot diam pada @semua atau @everyone." },
+];
 
-1. Chat biasa saja
-   Tanya apa saja, Pak Burhan siap membantu.
+const DEFAULT_BOT_SETTINGS = {
+  bot_name: "Pak Burhan",
+  timezone: DEFAULT_BOT_TIMEZONE,
+  private_allowed_lid: DEFAULT_PRIVATE_ALLOWED_LID,
+  groq_model: DEFAULT_GROQ_MODEL,
+  max_history_turns: 4,
+  mass_mention_terms: ["semua", "everyone", "all", "here"],
+  commands: DEFAULT_COMMANDS,
+};
 
-2. ${PREFIX}help atau ${PREFIX}menu
-   Menampilkan daftar perintah ini.
+let BOT_SETTINGS = { ...DEFAULT_BOT_SETTINGS, commands: [...DEFAULT_COMMANDS] };
+let lastSettingsRefresh = 0;
 
-3. ${PREFIX}cari [pertanyaan]
-   Contoh: ${PREFIX}cari berita terbaru tentang Solo
-   Pak Burhan akan mencari di internet dulu.
+function mergeCommands(configuredCommands) {
+  const configuredByCommand = new Map(
+    configuredCommands.map((item) => [item.command.toLowerCase(), item])
+  );
+  const mergedDefaults = DEFAULT_COMMANDS.map((item) =>
+    configuredByCommand.get(item.command.toLowerCase()) || item
+  );
+  const customCommands = configuredCommands.filter(
+    (item) => !DEFAULT_COMMANDS.some((defaultItem) => defaultItem.command.toLowerCase() === item.command.toLowerCase())
+  );
+  return [...mergedDefaults, ...customCommands];
+}
 
-4. Auto-search
-   Kalau kamu bilang "carikan...", "cari berita...", "tolong cari..."
-   otomatis akan dicari di internet.
+function normaliseBotSettings(rawSettings) {
+  const raw = rawSettings && typeof rawSettings === "object" ? rawSettings : {};
+  const maxHistoryTurns = Number.parseInt(raw.max_history_turns, 10);
+  const commands = Array.isArray(raw.commands)
+    ? raw.commands
+        .filter((item) => item && typeof item.command === "string" && typeof item.description === "string")
+        .map((item) => ({ command: item.command.trim(), description: item.description.trim() }))
+        .filter((item) => item.command && item.description)
+    : [];
+  const massMentionTerms = Array.isArray(raw.mass_mention_terms)
+    ? raw.mass_mention_terms
+        .filter((term) => typeof term === "string")
+        .map((term) => term.trim().toLowerCase())
+        .filter(Boolean)
+    : [];
 
-Di grup: gunakan format @bot diikuti pertanyaan, supaya tidak spam.
-Contoh: @Pak Burhan jadwal ulangan kapan?
+  return {
+    bot_name: typeof raw.bot_name === "string" && raw.bot_name.trim() ? raw.bot_name.trim() : DEFAULT_BOT_SETTINGS.bot_name,
+    timezone: typeof raw.timezone === "string" && raw.timezone.trim() ? raw.timezone.trim() : DEFAULT_BOT_SETTINGS.timezone,
+    private_allowed_lid: String(raw.private_allowed_lid || DEFAULT_BOT_SETTINGS.private_allowed_lid).replace(/\D/g, ""),
+    groq_model: typeof raw.groq_model === "string" && raw.groq_model.trim() ? raw.groq_model.trim() : DEFAULT_BOT_SETTINGS.groq_model,
+    max_history_turns: Number.isInteger(maxHistoryTurns) && maxHistoryTurns >= 1 && maxHistoryTurns <= 12 ? maxHistoryTurns : DEFAULT_BOT_SETTINGS.max_history_turns,
+    mass_mention_terms: massMentionTerms.length ? [...new Set(massMentionTerms)] : DEFAULT_BOT_SETTINGS.mass_mention_terms,
+    commands: mergeCommands(commands),
+  };
+}
 
-Sebelum chat AI dimulai, Pak Burhan akan meminta nama dan gender terlebih dahulu agar panggilannya tepat.
+async function refreshBotSettings(force = false) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return BOT_SETTINGS;
+  if (!force && Date.now() - lastSettingsRefresh < SETTINGS_REFRESH_MS) return BOT_SETTINGS;
 
-Ingat ya, berbicara yang sopan. Pak Burhan senang membantu yang sopan.`;
+  try {
+    const { data } = await axios.get(`${SUPABASE_URL}/rest/v1/bot_settings`, {
+      params: { select: "settings", id: "eq.default", limit: 1 },
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+      timeout: 10000,
+    });
+    if (Array.isArray(data) && data[0]?.settings) {
+      BOT_SETTINGS = normaliseBotSettings(data[0].settings);
+      console.log("Pengaturan bot diperbarui dari Supabase.");
+    }
+  } catch (error) {
+    const status = error.response?.status || "-";
+    console.warn(`Gagal memuat pengaturan Supabase (${status}); memakai pengaturan terakhir.`);
+  } finally {
+    lastSettingsRefresh = Date.now();
+  }
+  return BOT_SETTINGS;
+}
 
-const MAX_HISTORY_TURNS = 4;
+function buildHelpText() {
+  const settings = BOT_SETTINGS;
+  const commandLines = settings.commands
+    .map((item, index) => `${index + 1}. ${item.command}\n   ${item.description}`)
+    .join("\n\n");
+  return `Nah, ini daftar yang bisa kamu pakai ya:\n\n${commandLines}\n\nSebelum chat AI dimulai, ${settings.bot_name} akan meminta nama dan gender terlebih dahulu agar panggilannya tepat.\n\nIngat ya, berbicara yang sopan. ${settings.bot_name} senang membantu yang sopan. 🙂`;
+}
+
 let MEMORY = {};
 let PROFILES = {};
 let memoryDirty = false;
@@ -178,7 +252,7 @@ function markDirty() {
 }
 
 function trimHistory(hist) {
-  return hist.slice(-(MAX_HISTORY_TURNS * 2));
+  return hist.slice(-(BOT_SETTINGS.max_history_turns * 2));
 }
 
 function saveTurn(userId, userText, botText) {
@@ -399,7 +473,7 @@ function formatSearchResults(results) {
 function getCurrentDateTime() {
   try {
     return new Intl.DateTimeFormat("id-ID", {
-      timeZone: BOT_TIMEZONE,
+      timeZone: BOT_SETTINGS.timezone,
       weekday: "long",
       year: "numeric",
       month: "long",
@@ -411,7 +485,7 @@ function getCurrentDateTime() {
       timeZoneName: "short",
     }).format(new Date());
   } catch (error) {
-    console.warn("BOT_TIMEZONE tidak valid, memakai UTC:", BOT_TIMEZONE);
+    console.warn("Zona waktu Supabase tidak valid, memakai UTC:", BOT_SETTINGS.timezone);
     return new Date().toISOString();
   }
 }
@@ -422,7 +496,9 @@ async function askAI(userId, prompt, profile) {
   }
 
   const profileGreeting = getProfileGreeting(profile);
-  const systemPromptWithTime = `${SYSTEM_PROMPT}\n\nProfil pengguna saat ini:\n- Nama: ${profile.name}\n- Gender: ${profile.gender === "female" ? "perempuan" : "laki-laki"}\n- Panggilan wajib dan satu-satunya: ${profileGreeting}\nSelalu gunakan panggilan tersebut secara utuh bila menyapa pengguna. Jangan memakai panggilan lain, jangan mengubah nama, dan jangan memanggil pengguna dengan nama bot.\n\nAturan kualitas jawaban:\n- Jawab inti pertanyaan terlebih dahulu dengan kalimat yang jelas dan lengkap, baru tambahkan penjelasan bila diperlukan.\n- Untuk pertanyaan waktu, sebutkan hari, tanggal, dan jam yang diberikan di bawah ini secara langsung; jangan menyuruh pengguna mengecek ponsel.\n- Gunakan 1-2 emoji relevan untuk jawaban umum agar ramah dan ceria, tetapi jangan berlebihan.\n\nInformasi waktu saat ini:\n- Zona waktu acuan: ${BOT_TIMEZONE}\n- Tanggal dan jam saat ini: ${getCurrentDateTime()}\nGunakan informasi ini saat menjawab pertanyaan yang berkaitan dengan hari, tanggal, bulan, tahun, atau jam. Jangan mengarang waktu yang berbeda.`;
+  const botName = BOT_SETTINGS.bot_name;
+  const dynamicSystemPrompt = SYSTEM_PROMPT.replaceAll("Pak Burhan", botName);
+  const systemPromptWithTime = `${dynamicSystemPrompt}\n\nProfil pengguna saat ini:\n- Nama: ${profile.name}\n- Gender: ${profile.gender === "female" ? "perempuan" : "laki-laki"}\n- Panggilan wajib dan satu-satunya: ${profileGreeting}\nSelalu gunakan panggilan tersebut secara utuh bila menyapa pengguna. Jangan memakai panggilan lain, jangan mengubah nama, dan jangan memanggil pengguna dengan nama bot.\n\nAturan kualitas jawaban:\n- Jawab inti pertanyaan terlebih dahulu dengan kalimat yang jelas dan lengkap, baru tambahkan penjelasan bila diperlukan.\n- Untuk pertanyaan waktu, sebutkan hari, tanggal, dan jam yang diberikan di bawah ini secara langsung; jangan menyuruh pengguna mengecek ponsel.\n- Gunakan 1-2 emoji relevan untuk jawaban umum agar ramah dan ceria, tetapi jangan berlebihan.\n\nInformasi waktu saat ini:\n- Zona waktu acuan: ${BOT_SETTINGS.timezone}\n- Tanggal dan jam saat ini: ${getCurrentDateTime()}\nGunakan informasi ini saat menjawab pertanyaan yang berkaitan dengan hari, tanggal, bulan, tahun, atau jam. Jangan mengarang waktu yang berbeda.`;
   const history = MEMORY[userId] || [];
   const messages = [
     { role: "system", content: systemPromptWithTime },
@@ -442,7 +518,7 @@ async function askAI(userId, prompt, profile) {
       const { data } = await axios.post(
         `${GROQ_BASE_URL}/chat/completions`,
         {
-          model: GROQ_MODEL,
+          model: BOT_SETTINGS.groq_model,
           messages,
           temperature: 0.7,
           max_completion_tokens: 1024,
@@ -601,8 +677,14 @@ function getBotMentionSource(msg, sock, text) {
   return null;
 }
 
+function escapeRegExp(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function hasMassMention(text) {
-  return /(^|\s)@(semua|everyone|all|here)(?=\s|$|[,.!?;:])/i.test(
+  const terms = BOT_SETTINGS.mass_mention_terms.map(escapeRegExp).join("|");
+  if (!terms) return false;
+  return new RegExp(`(^|\\s)@(${terms})(?=\\s|$|[,.!?;:])`, "i").test(
     String(text || "")
   );
 }
@@ -634,10 +716,11 @@ async function handleMessage(sock, msg) {
       messageContent.documentMessage?.caption ||
       "";
 
+    await refreshBotSettings();
     const senderLid = getSenderLid(msg);
     const senderNumber = getSenderNumber(msg);
     const senderId = senderLid || senderNumber || "unknown";
-    if (!isGroup && senderLid !== PRIVATE_ALLOWED_LID) {
+    if (!isGroup && senderLid !== BOT_SETTINGS.private_allowed_lid) {
       console.log(`[P][${senderLid || "unknown"}] pesan privat diabaikan: LID tidak diizinkan`);
       return;
     }
@@ -680,6 +763,16 @@ async function handleMessage(sock, msg) {
         const conversationId = isGroup ? `group:${jid}:${senderId}` : `private:${senderId}`;
     const profileId = `user:${senderId}`;
     const lower = text.toLowerCase().trim();
+    if (
+      lower === `${PREFIX}help` ||
+      lower === `${PREFIX}menu` ||
+      lower === "help" ||
+      lower === "menu"
+    ) {
+      await sock.sendMessage(jid, { text: buildHelpText() }, { quoted: msg });
+      return;
+    }
+
     if (lower === `${PREFIX}profil ulang` || lower === `${PREFIX}reset profil`) {
       delete PROFILES[profileId];
       delete MEMORY[conversationId];
@@ -706,19 +799,8 @@ async function handleMessage(sock, msg) {
     }
     cooldown.set(conversationId, now);
         console.log(`[${isGroup ? "G" : "P"}][${senderId}] ${text.slice(0, 80)}`);
-    if (
 
-      lower === `${PREFIX}help` ||
-      lower === `${PREFIX}menu` ||
-      lower === "help" ||
-      lower === "menu"
-    ) {
-      await sock.sendMessage(jid, { text: HELP_TEXT }, { quoted: msg });
-      saveTurn(conversationId, text, HELP_TEXT);
-      return;
-    }
-
-        if (isRude(text)) {
+    if (isRude(text)) {
       const politeReply = `Nah, ${getProfileGreeting(profile)}. Saya ini Pak Burhan, wali kelas 7D. Biasakan berbicara dengan sopan ya di WhatsApp. Setelah itu baru kita lanjutkan.`;
       await sock.sendMessage(jid, { text: politeReply }, { quoted: msg });
       saveTurn(conversationId, text, politeReply);
@@ -765,7 +847,8 @@ async function startBot() {
   } else {
     console.log(`Groq key aktif: 1 dari ${GROQ_API_KEYS.length} key tersedia.`);
   }
-  if (!PRIVATE_ALLOWED_LID) {
+  await refreshBotSettings(true);
+  if (!BOT_SETTINGS.private_allowed_lid) {
     console.warn("PRIVATE_ALLOWED_LID masih kosong; semua chat privat akan diabaikan.");
   }
 
