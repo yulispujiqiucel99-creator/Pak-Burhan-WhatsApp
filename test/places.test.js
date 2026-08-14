@@ -15,6 +15,7 @@ const {
   getClassScheduleDayKey,
   parseClassScheduleDay,
   formatClassScheduleMessage,
+  formatClassScheduleDate,
   isClassScheduleDeliveryTime,
   normalizePlaceFeature,
   formatPlaceSummary,
@@ -146,14 +147,17 @@ test("membuat teks !sisa dan !status tanpa mengekspos API key", () => {
   assert.doesNotMatch(statusText, /gsk_|sk-/i);
 });
 
-test("membuat satu pesan jadwal Senin berisi pelajaran dan dua piket", () => {
-  const message = formatClassScheduleMessage("senin");
-  assert.match(message, /Jadwal Kelas VII D — Senin/);
-  assert.match(message, /1\. Upacara/);
-  assert.match(message, /2\. Matematika/);
-  assert.match(message, /PAI dan BP/);
-  assert.match(message, /Piket kelas: Farida, Rara, Nayla, Loveya, Lulu, Satria, Kenzie/);
-  assert.match(message, /Piket MBG: Farida, Nayla, Lulu, Satria, Alby, Amanda/);
+test("membuat satu pesan informasi Senin berisi seragam, pelajaran, dan dua piket", () => {
+  const date = new Date("2026-08-10T10:00:00.000Z");
+  const message = formatClassScheduleMessage("senin", date);
+  assert.equal(formatClassScheduleDate(date), "10 Agustus 2026, senin");
+  assert.match(message, /\*INFORMASI SENIN\*/);
+  assert.match(message, /_10 Agustus 2026, senin_/);
+  assert.match(message, /👔 Seragam\nmemakai seragam sekolah lama/);
+  assert.match(message, /📔 Jadwal\n- Upacara\n- Matematika/);
+  assert.match(message, /- PAI dan BP/);
+  assert.match(message, /🛋️ Piket kelas\n\*SENIN\*\n- Farida\n- Rara/);
+  assert.match(message, /🍴 Piket MBG\n\*SENIN\*\n- Farida\n- Nayla\n- Lulu\n- Satria\n- Alby\n- Amanda/);
 });
 
 test("menampilkan pesan libur pada Sabtu dan Minggu", () => {

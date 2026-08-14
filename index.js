@@ -58,6 +58,7 @@ const GROUP_REST_START_MINUTES = 21 * 60 + 30;
 const GROUP_REST_END_MINUTES = 4 * 60;
 const GROUP_REST_MESSAGE = "akhirnya tugas saya selesai wah udh larut malam saya harus tidur secepatnya buat murid murid saya, hmm... ok alarm 04.00 udh saya jadwal buat persiapan💤😴";
 const CLASS_SCHEDULE_DELIVERY_MINUTES = new Set([17 * 60, 20 * 60]);
+const CLASS_UNIFORM_TEXT = "memakai seragam sekolah lama";
 
 const CLASS_WEEKLY_SCHEDULE = {
   senin: {
@@ -1121,22 +1122,49 @@ function getClassScheduleDayKey(date = new Date()) {
   }
 }
 
-function formatClassScheduleMessage(dayKey) {
+function formatClassScheduleDate(date = new Date()) {
+  try {
+    const parts = new Intl.DateTimeFormat("id-ID", {
+      timeZone: BOT_SETTINGS.timezone,
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).formatToParts(date);
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.day} ${values.month} ${values.year}, ${String(values.weekday || "").toLowerCase()}`;
+  } catch {
+    return date.toISOString().slice(0, 10);
+  }
+}
+
+function formatClassScheduleMessage(dayKey, date = new Date()) {
   const schedule = CLASS_WEEKLY_SCHEDULE[dayKey];
+  const label = schedule?.label || (dayKey === "sabtu" ? "Sabtu" : "Minggu");
+  const header = `*INFORMASI ${label.toUpperCase()}*\n_${formatClassScheduleDate(date)}_`;
   if (!schedule) {
-    const label = dayKey === "sabtu" ? "Sabtu" : "Minggu";
-    return `Jadwal Kelas VII D — ${label}\n\nHari ini libur. Selamat beristirahat dan siapkan diri untuk sekolah berikutnya. 🙂`;
+    return `${header}\n\n🏖️ Libur\nHari ini libur. Selamat beristirahat dan siapkan diri untuk sekolah berikutnya. 🙂`;
   }
 
-  const lessons = schedule.lessons.map((lesson, index) => `${index + 1}. ${lesson}`).join("\n");
+  const lessons = schedule.lessons.map((lesson) => `- ${lesson}`).join("\n");
+  const classDuty = schedule.classDuty.map((name) => `- ${name}`).join("\n");
+  const mbgDuty = schedule.mbgDuty.map((name) => `- ${name}`).join("\n");
   return [
-    `Jadwal Kelas VII D — ${schedule.label}`,
+    header,
     "",
-    "Pelajaran:",
+    "👔 Seragam",
+    CLASS_UNIFORM_TEXT,
+    "",
+    "📔 Jadwal",
     lessons,
     "",
-    `Piket kelas: ${schedule.classDuty.join(", ")}`,
-    `Piket MBG: ${schedule.mbgDuty.join(", ")}`,
+    "🛋️ Piket kelas",
+    `*${label.toUpperCase()}*`,
+    classDuty,
+    "",
+    "🍴 Piket MBG",
+    `*${label.toUpperCase()}*`,
+    mbgDuty,
   ].join("\n");
 }
 
@@ -1668,6 +1696,7 @@ module.exports = {
   getClassScheduleDayKey,
   parseClassScheduleDay,
   formatClassScheduleMessage,
+  formatClassScheduleDate,
   isClassScheduleDeliveryTime,
   normalizePlaceFeature,
   formatPlaceSummary,
