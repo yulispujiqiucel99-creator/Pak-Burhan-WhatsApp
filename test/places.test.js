@@ -6,6 +6,9 @@ const {
   getPlaceCategory,
   isLowValueMessage,
   buildLowValueReply,
+  consumeQuestionQuotaForStore,
+  buildQuestionLimitReply,
+  isGroupRestTime,
   normalizePlaceFeature,
   formatPlaceSummary,
 } = require("../index");
@@ -73,4 +76,36 @@ test("membuat balasan hemat-limit dengan panggilan sesuai gender", () => {
     "hehe maaf ya Mas, sebelumnya saya dibuat dengan limit. *jika limit saya habis* karna hal yang tidak terlalu berguna itu sama saja mubazir limit😅"
   );
   assert.match(buildLowValueReply({ gender: "female" }), /^hehe maaf ya Mbak,/);
+});
+
+test("membatasi satu LID sampai 20 pertanyaan lalu mereset setelah 24 jam", () => {
+  const usage = {};
+  const lid = "235656601194672";
+  const start = 1_700_000_000_000;
+
+  for (let index = 0; index < 20; index += 1) {
+    assert.equal(consumeQuestionQuotaForStore(usage, lid, start + index), true);
+  }
+  assert.equal(consumeQuestionQuotaForStore(usage, lid, start + 100), false);
+  assert.equal(usage[lid].count, 20);
+  assert.equal(consumeQuestionQuotaForStore(usage, lid, start + 24 * 60 * 60 * 1000), true);
+  assert.equal(usage[lid].count, 1);
+});
+
+test("membuat pesan limit sesuai panggilan profil", () => {
+  assert.equal(
+    buildQuestionLimitReply({ gender: "male" }),
+    "waduh mas udh limit nih tunggu sampai 24jam ya saya juga mau istirahat"
+  );
+  assert.equal(
+    buildQuestionLimitReply({ gender: "female" }),
+    "waduh mbak udh limit nih tunggu sampai 24jam ya saya juga mau istirahat"
+  );
+});
+
+test("menutup respons grup pada 21.30 sampai sebelum 04.00 WIB", () => {
+  assert.equal(isGroupRestTime(new Date("2026-08-14T14:29:00.000Z")), false);
+  assert.equal(isGroupRestTime(new Date("2026-08-14T14:30:00.000Z")), true);
+  assert.equal(isGroupRestTime(new Date("2026-08-14T20:59:00.000Z")), true);
+  assert.equal(isGroupRestTime(new Date("2026-08-14T21:00:00.000Z")), false);
 });

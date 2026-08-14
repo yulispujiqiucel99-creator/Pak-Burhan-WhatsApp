@@ -44,6 +44,13 @@ const AUTH_DIR = path.join(__dirname, "auth_info");
 const DATA_DIR = path.join(__dirname, "data");
 const MEMORY_FILE = path.join(DATA_DIR, "memory.json");
 const PROFILES_FILE = path.join(DATA_DIR, "profiles.json");
+const QUESTION_USAGE_FILE = path.join(DATA_DIR, "question_usage.json");
+const BOT_STATE_FILE = path.join(DATA_DIR, "bot_state.json");
+const DAILY_QUESTION_LIMIT = 20;
+const DAILY_QUESTION_WINDOW_MS = 24 * 60 * 60 * 1000;
+const GROUP_REST_START_MINUTES = 21 * 60 + 30;
+const GROUP_REST_END_MINUTES = 4 * 60;
+const GROUP_REST_MESSAGE = "akhirnya tugas saya selesai wah udh larut malam saya harus tidur secepatnya buat murid murid saya, hmm... ok alarm 04.00 udh saya jadwal buat persiapan💤😴";
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -93,7 +100,7 @@ const DEFAULT_COMMANDS = [
   { command: "Chat biasa", description: "Kirim pertanyaan setelah profil nama dan gender lengkap." },
   { command: `${PREFIX}help / ${PREFIX}menu`, description: "Menampilkan daftar perintah terbaru." },
   { command: `${PREFIX}cari [pertanyaan]`, description: "Mencari informasi di internet sebelum menjawab." },
-  { command: `${PREFIX}tempat [jenis/nama] di [lokasi]`, description: "Mencari tempat dan mengirim lokasi yang dapat dibuka di WhatsApp. Contoh: !tempat kafe di Solo." },
+  { command: `${PREFIX}tempat [jenis/nama] di [lokasi]`, description: "Mencari satu tempat dan mengirim satu lokasi yang dapat dibuka di WhatsApp. Contoh: !tempat kafe di Solo." },
   { command: `${PREFIX}profil ulang / ${PREFIX}reset profil`, description: "Menghapus nama, gender, dan riwayat chat Anda untuk diisi ulang." },
   { command: "Tag di grup", description: "Tag bot lalu tulis pertanyaan; bot diam pada @semua atau @everyone." },
 ];
@@ -187,6 +194,9 @@ function buildHelpText() {
 
 let MEMORY = {};
 let PROFILES = {};
+let QUESTION_USAGE = {};
+let BOT_STATE = { lastGroupRestDate: "" };
+let groupRestTimer = null;
 let memoryDirty = false;
 let memoryUpdateCount = 0;
 let lastMemorySave = Date.now();
@@ -210,6 +220,48 @@ function loadProfiles() {
     }
   } catch {
     PROFILES = {};
+  }
+}
+
+function loadQuestionUsage() {
+  try {
+    if (fs.existsSync(QUESTION_USAGE_FILE)) {
+      const parsed = JSON.parse(fs.readFileSync(QUESTION_USAGE_FILE, "utf8"));
+      QUESTION_USAGE = parsed && typeof parsed === "object" ? parsed : {};
+    }
+  } catch {
+    QUESTION_USAGE = {};
+  }
+}
+
+function loadBotState() {
+  try {
+    if (fs.existsSync(BOT_STATE_FILE)) {
+      const parsed = JSON.parse(fs.readFileSync(BOT_STATE_FILE, "utf8"));
+      BOT_STATE = parsed && typeof parsed === "object" ? parsed : { lastGroupRestDate: "" };
+    }
+  } catch {
+    BOT_STATE = { lastGroupRestDate: "" };
+  }
+}
+
+function saveQuestionUsage() {
+  try {
+    const tmp = QUESTION_USAGE_FILE + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(QUESTION_USAGE, null, 2), "utf8");
+    fs.renameSync(tmp, QUESTION_USAGE_FILE);
+  } catch (e) {
+    console.warn("Gagal simpan kuota pertanyaan:", e.message);
+  }
+}
+
+function saveBotState() {
+  try {
+    const tmp = BOT_STATE_FILE + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(BOT_STATE, null, 2), "utf8");
+    fs.renameSync(tmp, BOT_STATE_FILE);
+  } catch (e) {
+    console.warn("Gagal simpan status bot:", e.message);
   }
 }
 
@@ -251,6 +303,41 @@ function maybeSaveMemory() {
 function markDirty() {
   memoryDirty = true;
   memoryUpdateCount += 1;
+}
+
+function getQuestionQuotaRecord(usageStore, lid, now = Date.now()) {
+  const existing = usageStore[lid];
+  const windowStartedAt = Number(existing?.windowStartedAt);
+  const count = Number(existing?.count);
+  if (
+    !existing ||
+    !Number.isFinite(windowStartedAt) ||
+    !Number.isInteger(count) ||
+    count < 0 ||
+    now - windowStartedAt >= DAILY_QUESTION_WINDOW_MS ||
+    now < windowStartedAt
+  ) {
+    usageStore[lid] = { windowStartedAt: now, count: 0 };
+  }
+  return usageStore[lid];
+}
+
+function consumeQuestionQuotaForStore(usageStore, lid, now = Date.now()) {
+  const record = getQuestionQuotaRecord(usageStore, lid, now);
+  if (record.count >= DAILY_QUESTION_LIMIT) return false;
+  record.count += 1;
+  return true;
+}
+
+function consumeQuestionQuota(lid, now = Date.now()) {
+  const allowed = consumeQuestionQuotaForStore(QUESTION_USAGE, lid, now);
+  saveQuestionUsage();
+  return allowed;
+}
+
+function buildQuestionLimitReply(profile) {
+  const honorific = profile?.gender === "female" ? "mbak" : "mas";
+  return `waduh ${honorific} udh limit nih tunggu sampai 24jam ya saya juga mau istirahat`;
 }
 
 function trimHistory(hist) {
@@ -369,18 +456,26 @@ function processProfileOnboarding(profileId, text) {
 
 loadMemory();
 loadProfiles();
+loadQuestionUsage();
+loadBotState();
 process.on("exit", () => {
   saveMemory(true);
   saveProfiles();
+  saveQuestionUsage();
+  saveBotState();
 });
 process.on("SIGINT", () => {
   saveMemory(true);
   saveProfiles();
+  saveQuestionUsage();
+  saveBotState();
   process.exit(0);
 });
 process.on("SIGTERM", () => {
   saveMemory(true);
   saveProfiles();
+  saveQuestionUsage();
+  saveBotState();
   process.exit(0);
 });
 
@@ -603,7 +698,7 @@ async function searchNamedPlace(query) {
   const { data } = await axios.get("https://api.geoapify.com/v1/geocode/search", {
     params: {
       text: query,
-      limit: 3,
+      limit: 1,
       lang: "id",
       apiKey: GEOAPIFY_API_KEY,
     },
@@ -635,7 +730,7 @@ async function searchPlaces(searchTerm, location) {
         categories: category,
         filter: `circle:${center.longitude},${center.latitude},7000`,
         bias: `proximity:${center.longitude},${center.latitude}`,
-        limit: 3,
+        limit: 1,
         lang: "id",
         apiKey: GEOAPIFY_API_KEY,
       },
@@ -883,6 +978,81 @@ function cleanMentions(text) {
 }
 
 
+function getZonedClockParts(date = new Date()) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: BOT_SETTINGS.timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(date);
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return {
+      dateKey: `${values.year}-${values.month}-${values.day}`,
+      hour: Number(values.hour),
+      minute: Number(values.minute),
+    };
+  } catch {
+    const fallback = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+    return {
+      dateKey: fallback.toISOString().slice(0, 10),
+      hour: fallback.getUTCHours(),
+      minute: fallback.getUTCMinutes(),
+    };
+  }
+}
+
+function isGroupRestTime(date = new Date()) {
+  const { hour, minute } = getZonedClockParts(date);
+  const currentMinutes = hour * 60 + minute;
+  return currentMinutes >= GROUP_REST_START_MINUTES || currentMinutes < GROUP_REST_END_MINUTES;
+}
+
+function isGroupRestAnnouncementTime(date = new Date()) {
+  const { hour, minute } = getZonedClockParts(date);
+  return hour === 21 && minute === 30;
+}
+
+async function announceGroupRest(sock, date = new Date()) {
+  if (!isGroupRestAnnouncementTime(date)) return;
+  const { dateKey } = getZonedClockParts(date);
+  if (BOT_STATE.lastGroupRestDate === dateKey) return;
+
+  try {
+    const groups = await sock.groupFetchAllParticipating();
+    const groupIds = Object.keys(groups || {});
+    await Promise.allSettled(
+      groupIds.map((groupId) => sock.sendMessage(groupId, { text: GROUP_REST_MESSAGE }))
+    );
+    BOT_STATE.lastGroupRestDate = dateKey;
+    saveBotState();
+    console.log(`Pesan istirahat grup dikirim ke ${groupIds.length} grup.`);
+  } catch (error) {
+    console.warn("Gagal mengirim pesan istirahat grup:", error.message);
+  }
+}
+
+function startGroupRestScheduler(sock) {
+  if (groupRestTimer) clearInterval(groupRestTimer);
+  let lastCheckedMinute = "";
+  const checkSchedule = () => {
+    const now = new Date();
+    const { dateKey, hour, minute } = getZonedClockParts(now);
+    const minuteKey = `${dateKey}-${hour}-${minute}`;
+    if (minuteKey === lastCheckedMinute) return;
+    lastCheckedMinute = minuteKey;
+    announceGroupRest(sock, now).catch((error) => {
+      console.warn("Scheduler istirahat grup gagal:", error.message);
+    });
+  };
+  checkSchedule();
+  groupRestTimer = setInterval(checkSchedule, 15 * 1000);
+  groupRestTimer.unref?.();
+}
+
 async function handleMessage(sock, msg) {
   try {
     if (!msg.message || msg.key.fromMe) return;
@@ -913,6 +1083,10 @@ async function handleMessage(sock, msg) {
     if (!text.trim()) return;
 
     if (isGroup) {
+      if (isGroupRestTime()) {
+        console.log("[G] bot sedang istirahat sampai 04.00 WIB.");
+        return;
+      }
       if (hasMassMention(text)) {
         console.log("[G] pesan dengan mention massal diabaikan.");
         return;
@@ -985,6 +1159,24 @@ async function handleMessage(sock, msg) {
     cooldown.set(conversationId, now);
     console.log(`[${isGroup ? "G" : "P"}][${senderId}] ${text.slice(0, 80)}`);
 
+    if (isRude(text)) {
+      const politeReply = `Nah, ${getProfileGreeting(profile)}. Saya ini Pak Burhan, wali kelas 7D. Biasakan berbicara dengan sopan ya di WhatsApp. Setelah itu baru kita lanjutkan.`;
+      await sock.sendMessage(jid, { text: politeReply }, { quoted: msg });
+      saveTurn(conversationId, text, politeReply);
+      return;
+    }
+    if (isLowValueMessage(text)) {
+      const lowValueReply = buildLowValueReply(profile);
+      await sock.sendMessage(jid, { text: lowValueReply }, { quoted: msg });
+      return;
+    }
+    if (isTimeQuestion(text)) {
+      const timeReply = getTimeReply(profile);
+      await sock.sendMessage(jid, { text: timeReply }, { quoted: msg });
+      saveTurn(conversationId, text, timeReply);
+      return;
+    }
+
     const placeCommand = parsePlaceCommand(text);
     if (placeCommand) {
       if (placeCommand.error === "empty") {
@@ -993,6 +1185,11 @@ async function handleMessage(sock, msg) {
           { text: `Nah, ${getProfileGreeting(profile)}, tulis jenis atau nama tempatnya ya.\nContoh: ${PREFIX}tempat kafe di Solo` },
           { quoted: msg }
         );
+        return;
+      }
+
+      if (!consumeQuestionQuota(senderId)) {
+        await sock.sendMessage(jid, { text: buildQuestionLimitReply(profile) }, { quoted: msg });
         return;
       }
 
@@ -1052,23 +1249,11 @@ async function handleMessage(sock, msg) {
       return;
     }
 
-    if (isRude(text)) {
-      const politeReply = `Nah, ${getProfileGreeting(profile)}. Saya ini Pak Burhan, wali kelas 7D. Biasakan berbicara dengan sopan ya di WhatsApp. Setelah itu baru kita lanjutkan.`;
-      await sock.sendMessage(jid, { text: politeReply }, { quoted: msg });
-      saveTurn(conversationId, text, politeReply);
+    if (!consumeQuestionQuota(senderId)) {
+      await sock.sendMessage(jid, { text: buildQuestionLimitReply(profile) }, { quoted: msg });
       return;
     }
-    if (isLowValueMessage(text)) {
-      const lowValueReply = buildLowValueReply(profile);
-      await sock.sendMessage(jid, { text: lowValueReply }, { quoted: msg });
-      return;
-    }
-    if (isTimeQuestion(text)) {
-      const timeReply = getTimeReply(profile);
-      await sock.sendMessage(jid, { text: timeReply }, { quoted: msg });
-      saveTurn(conversationId, text, timeReply);
-      return;
-    }
+
     let finalPrompt = text;
     if (
       lower.startsWith(`${PREFIX}cari `) ||
@@ -1167,6 +1352,7 @@ async function startBot() {
       reconnectAttempts = 0;
       console.log("✅ Bot sudah terhubung ke WhatsApp!");
       console.log("Nomor:", sock.user?.id?.split(":")[0] || "-");
+      startGroupRestScheduler(sock);
     }
 
     if (connection === "close") {
@@ -1208,6 +1394,10 @@ module.exports = {
   getPlaceCategory,
   isLowValueMessage,
   buildLowValueReply,
+  consumeQuestionQuotaForStore,
+  buildQuestionLimitReply,
+  isGroupRestTime,
+  isGroupRestAnnouncementTime,
   normalizePlaceFeature,
   formatPlaceSummary,
 };
