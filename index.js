@@ -416,6 +416,41 @@ function isRude(text) {
   return false;
 }
 
+const LOW_VALUE_MESSAGES = new Set([
+  "p", "ping", "tes", "test", "tes bot", "test bot",
+  "halo", "hai", "hi", "hello", "halo pak burhan", "hai pak burhan", "halo bot", "hai bot",
+  "iya", "ya", "y", "ok", "oke", "okey", "siap",
+  "makasih", "terima kasih", "thanks", "thank you", "thx",
+  "wkwk", "wk", "wkwkwk", "haha", "hehe", "hihi", "lol",
+  "mantap", "keren", "apa kabar", "gimana kabar", "how are you",
+  "dadah", "bye", "by",
+]);
+
+function normalizeLowValueText(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isLowValueMessage(text) {
+  const normalized = normalizeLowValueText(text);
+  if (!normalized) return false;
+  if (LOW_VALUE_MESSAGES.has(normalized)) return true;
+
+  return (
+    /^(?:w?kw+k|ha(?:ha)+|he(?:he)+|hi(?:hi)+)$/.test(normalized) ||
+    /^(?:halo|hai|hi|hello)(?: pak burhan| bot)?$/.test(normalized) ||
+    /^(?:selamat (?:pagi|siang|sore|malam))(?: pak burhan| bot)?$/.test(normalized)
+  );
+}
+
+function buildLowValueReply(profile) {
+  const honorific = profile?.gender === "female" ? "Mbak" : "Mas";
+  return `hehe maaf ya ${honorific}, sebelumnya saya dibuat dengan limit. *jika limit saya habis* karna hal yang tidak terlalu berguna itu sama saja mubazir limit😅`;
+}
+
 function needsWebSearch(prompt) {
   const p = prompt.toLowerCase();
   const triggers = [
@@ -718,7 +753,7 @@ async function askAI(userId, prompt, profile) {
 
 
 const cooldown = new Map();
-const COOLDOWN_MS = 6000;
+const COOLDOWN_MS = 20 * 1000;
 
 function normalizeJidNumber(jid) {
   return String(jid || "")
@@ -943,6 +978,13 @@ async function handleMessage(sock, msg) {
     }
 
     const profile = onboarding.profile;
+    const now = Date.now();
+    if (cooldown.has(conversationId) && now - cooldown.get(conversationId) < COOLDOWN_MS) {
+      return;
+    }
+    cooldown.set(conversationId, now);
+    console.log(`[${isGroup ? "G" : "P"}][${senderId}] ${text.slice(0, 80)}`);
+
     const placeCommand = parsePlaceCommand(text);
     if (placeCommand) {
       if (placeCommand.error === "empty") {
@@ -1010,17 +1052,15 @@ async function handleMessage(sock, msg) {
       return;
     }
 
-    const now = Date.now();
-    if (cooldown.has(conversationId) && now - cooldown.get(conversationId) < COOLDOWN_MS) {
-      return;
-    }
-    cooldown.set(conversationId, now);
-        console.log(`[${isGroup ? "G" : "P"}][${senderId}] ${text.slice(0, 80)}`);
-
     if (isRude(text)) {
       const politeReply = `Nah, ${getProfileGreeting(profile)}. Saya ini Pak Burhan, wali kelas 7D. Biasakan berbicara dengan sopan ya di WhatsApp. Setelah itu baru kita lanjutkan.`;
       await sock.sendMessage(jid, { text: politeReply }, { quoted: msg });
       saveTurn(conversationId, text, politeReply);
+      return;
+    }
+    if (isLowValueMessage(text)) {
+      const lowValueReply = buildLowValueReply(profile);
+      await sock.sendMessage(jid, { text: lowValueReply }, { quoted: msg });
       return;
     }
     if (isTimeQuestion(text)) {
@@ -1166,6 +1206,8 @@ async function startBot() {
 module.exports = {
   parsePlaceCommand,
   getPlaceCategory,
+  isLowValueMessage,
+  buildLowValueReply,
   normalizePlaceFeature,
   formatPlaceSummary,
 };

@@ -6,6 +6,8 @@ Bot WhatsApp persona **Pak Burhan** sebagai wali kelas 7D. Proyek ini menggunaka
 
 Bot mendukung login melalui **QR Code** atau **Pairing Code**, percakapan AI dengan gaya Pak Burhan, memori percakapan, moderasi kata kasar, perintah `!help`, `!menu`, `!cari`, dan `!tempat`. Perintah `!tempat` memakai Geoapify untuk mencari lokasi publik lalu mengirimkan hingga tiga **pesan lokasi WhatsApp yang dapat diketuk** untuk membuka peta. Pada grup, bot hanya menjawab saat akun bot benar-benar di-mention dengan format **`@bot pertanyaan`**; pada chat pribadi, bot hanya membalas LID yang diizinkan. Konfigurasi proyek dirancang untuk deployment Railway dengan volume persisten.
 
+Untuk menghemat limit AI, satu pengguna atau percakapan grup memiliki **cooldown 20 detik** setelah mengirim pesan yang diproses. Basa-basi sederhana seperti sapaan, pesan tes, ucapan terima kasih, dan tawa singkat tidak diteruskan ke Groq; bot mengirim respons hemat-limit dengan panggilan Mas atau Mbak sesuai profil.
+
 ## Setup Lokal
 
 ```bash
