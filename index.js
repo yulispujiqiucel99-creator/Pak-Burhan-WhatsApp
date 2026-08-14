@@ -119,11 +119,12 @@ Kepribadian:
 - Selalu menghargai setiap orang yang chat denganmu.
 
 Gaya Berbicara:
-- Gunakan bahasa Indonesia yang santai namun sopan ala bapak-bapak guru.
-- Selalu sisipkan frasa khas bapak-bapak seperti "nah", "nah gitu", "coba kita lihat", "jadi begini ya", atau "pelan-pelan ya" secara wajar.
-- Gunakan 1-2 emoji yang relevan dan ceria pada jawaban umum, misalnya 🙂, 📚, ⏰, atau 👍. Hindari emoji untuk situasi serius atau sensitif.
-- Sapa pengguna laki-laki dengan "Mas" dan perempuan dengan "Mbak".
-- Gunakan nama, gender, dan panggilan pengguna yang diberikan dalam konteks profil. Jangan menebak gender atau mengganti panggilan tersebut.
+- Gunakan bahasa Indonesia yang santai namun sopan ala bapak-bapak guru yang bersemangat, hangat, dan enak dibaca di WhatsApp.
+- Awali penjelasan yang cukup panjang dengan pembuka khas yang hidup, misalnya "✨ Nah, Mas Naufal, mari Pak Burhan jelaskan ya!"; variasikan pembuka dan jangan memakai frasa yang sama berulang di setiap paragraf.
+- Susun penjelasan seperti informasi jadwal: judul singkat bila topiknya jelas, poin bernomor atau emoji yang relevan, isi ringkas per bagian, lalu penutup penyemangat. Contoh emoji: 🌦️ untuk hujan, 📚 untuk pelajaran, 💡 untuk inti, ✅ untuk kesimpulan, dan 🌟 untuk semangat.
+- Gunakan 2-4 emoji yang relevan pada penjelasan umum agar terasa ceria, tetapi jangan berlebihan. Hindari emoji untuk situasi serius atau sensitif.
+- Hindari kalimat datar dan pembuka berulang seperti "Nah gitu" atau "Jadi begini ya" pada setiap paragraf; gunakan maksimal satu frasa khas dalam satu jawaban bila diperlukan.
+- Sapa pengguna dengan panggilan profil yang diberikan dalam konteks secara persis dan utuh, misalnya "Mas Naufal" atau "Mbak Farida". Panggilan itu adalah satu kesatuan: jangan pernah menambah kata "Saya", "Pak Burhan", atau kata lain setelahnya. Jangan pernah menulis "Mas Naufal Saya".
 - Jangan pernah memanggil pengguna dengan "Nak Pak Burhan", "Pak Burhan", atau variasi sejenis. "Pak Burhan" hanya nama bot, bukan nama pengguna.
 - Jangan terlalu sering memanggil "nak", gunakan panggilan ini HANYA saat memberikan nasihat serius.
 
@@ -954,7 +955,7 @@ async function askAI(userId, prompt, profile) {
   const profileGreeting = getProfileGreeting(profile);
   const botName = BOT_SETTINGS.bot_name;
   const dynamicSystemPrompt = SYSTEM_PROMPT.replaceAll("Pak Burhan", botName);
-  const systemPromptWithTime = `${dynamicSystemPrompt}\n\nProfil pengguna saat ini:\n- Nama: ${profile.name}\n- Gender: ${profile.gender === "female" ? "perempuan" : "laki-laki"}\n- Panggilan wajib dan satu-satunya: ${profileGreeting}\nSelalu gunakan panggilan tersebut secara utuh bila menyapa pengguna. Jangan memakai panggilan lain, jangan mengubah nama, dan jangan memanggil pengguna dengan nama bot.\n\nAturan kualitas jawaban:\n- Utamakan ketelitian daripada kecepatan. Pahami pertanyaan sepenuhnya sebelum menjawab.\n- Jawab inti pertanyaan terlebih dahulu, lalu berikan penjelasan yang runtut dan cukup lengkap. Untuk materi pelajaran, gunakan langkah-langkah dan contoh sederhana bila membantu.\n- Jangan memberi jawaban terlalu pendek jika pertanyaan membutuhkan alasan, langkah, atau penjelasan. Namun untuk pertanyaan sederhana, tetap jawab ringkas dan langsung.\n- Bila ada informasi yang kurang jelas atau tidak pasti, katakan batasannya dengan jujur; jangan mengarang.\n- Untuk pertanyaan waktu, sebutkan hari, tanggal, dan jam yang diberikan di bawah ini secara langsung; jangan menyuruh pengguna mengecek ponsel.\n- Gunakan 1-2 emoji relevan untuk jawaban umum agar ramah dan ceria, tetapi jangan berlebihan.\n\nInformasi waktu saat ini:\n- Zona waktu acuan: ${BOT_SETTINGS.timezone}\n- Tanggal dan jam saat ini: ${getCurrentDateTime()}\nGunakan informasi ini saat menjawab pertanyaan yang berkaitan dengan hari, tanggal, bulan, tahun, atau jam. Jangan mengarang waktu yang berbeda.`;
+  const systemPromptWithTime = `${dynamicSystemPrompt}\n\nProfil pengguna saat ini:\n- Nama: ${profile.name}\n- Gender: ${profile.gender === "female" ? "perempuan" : "laki-laki"}\n- Panggilan wajib dan satu-satunya: ${profileGreeting}\nSelalu gunakan panggilan tersebut secara utuh bila menyapa pengguna. Jangan memakai panggilan lain, jangan mengubah nama, dan jangan memanggil pengguna dengan nama bot.\n\nAturan kualitas jawaban:\n- Utamakan ketelitian daripada kecepatan. Pahami pertanyaan sepenuhnya sebelum menjawab.\n- Jawab inti pertanyaan terlebih dahulu, lalu berikan penjelasan yang runtut dan cukup lengkap. Untuk materi pelajaran, gunakan langkah-langkah dan contoh sederhana bila membantu.\n- Jangan memberi jawaban terlalu pendek jika pertanyaan membutuhkan alasan, langkah, atau penjelasan. Namun untuk pertanyaan sederhana, tetap jawab ringkas dan langsung.\n- Bila ada informasi yang kurang jelas atau tidak pasti, katakan batasannya dengan jujur; jangan mengarang.\n- Untuk pertanyaan waktu, sebutkan hari, tanggal, dan jam yang diberikan di bawah ini secara langsung; jangan menyuruh pengguna mengecek ponsel.\n- Untuk penjelasan pendidikan, gunakan gaya hidup: pembuka singkat, judul atau emoji topik, langkah/poin yang runtut, lalu kesimpulan dan penyemangat. Jangan mengulang panggilan pengguna lebih dari sekali kecuali benar-benar perlu.\n- Gunakan 2-4 emoji relevan pada penjelasan umum agar ramah dan ceria, tetapi jangan berlebihan.\n\nInformasi waktu saat ini:\n- Zona waktu acuan: ${BOT_SETTINGS.timezone}\n- Tanggal dan jam saat ini: ${getCurrentDateTime()}\nGunakan informasi ini saat menjawab pertanyaan yang berkaitan dengan hari, tanggal, bulan, tahun, atau jam. Jangan mengarang waktu yang berbeda.`;
   const history = MEMORY[userId] || [];
   const messages = [
     { role: "system", content: systemPromptWithTime },
@@ -1104,8 +1105,51 @@ async function askVision(question, imageBuffer, mimeType, profile) {
   return "Maaf, gambar belum bisa dianalisis sekarang. Coba lagi sebentar ya.";
 }
 
-const cooldown = new Map();
 const COOLDOWN_MS = 20 * 1000;
+const GROUP_REQUEST_QUEUES = new Map();
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function formatQueueReply(position) {
+  return `Permintaan sedang diproses (nomor antrean ${position}).`;
+}
+
+function reserveGroupRequest(groupJid) {
+  let state = GROUP_REQUEST_QUEUES.get(groupJid);
+  if (!state) {
+    state = { tail: Promise.resolve(), pending: 0, lastStartedAt: 0 };
+    GROUP_REQUEST_QUEUES.set(groupJid, state);
+  }
+
+  const shouldNotify = state.pending > 0 || Date.now() < state.lastStartedAt + COOLDOWN_MS;
+  const position = state.pending + 1;
+  const previousRequest = state.tail;
+  let releaseGate;
+  state.tail = new Promise((resolve) => {
+    releaseGate = resolve;
+  });
+  state.pending = position;
+  let released = false;
+
+  return {
+    position,
+    shouldNotify,
+    async waitForTurn() {
+      await previousRequest;
+      const remainingCooldown = state.lastStartedAt + COOLDOWN_MS - Date.now();
+      if (remainingCooldown > 0) await delay(remainingCooldown);
+      state.lastStartedAt = Date.now();
+    },
+    release() {
+      if (released) return;
+      released = true;
+      state.pending = Math.max(0, state.pending - 1);
+      releaseGate();
+    },
+  };
+}
 
 function normalizeJidNumber(jid) {
   return String(jid || "")
@@ -1475,6 +1519,7 @@ function startGroupRestScheduler(sock) {
 }
 
 async function handleMessage(sock, msg) {
+  let groupQueueTicket;
   try {
     if (!msg.message || msg.key.fromMe) return;
 
@@ -1660,22 +1705,26 @@ async function handleMessage(sock, msg) {
       return;
     }
 
-    const now = Date.now();
-    if (cooldown.has(conversationId) && now - cooldown.get(conversationId) < COOLDOWN_MS) {
+    if (isLowValueMessage(text)) {
+      const lowValueReply = buildLowValueReply(profile);
+      await sock.sendMessage(jid, { text: lowValueReply }, { quoted: msg });
       return;
     }
-    cooldown.set(conversationId, now);
+
+    if (isGroup) {
+      groupQueueTicket = reserveGroupRequest(jid);
+      if (groupQueueTicket.shouldNotify) {
+        await sock.sendMessage(jid, { text: formatQueueReply(groupQueueTicket.position) }, { quoted: msg });
+      }
+      await groupQueueTicket.waitForTurn();
+    }
+
     console.log(`[${isGroup ? "G" : "P"}][${senderId}] ${text.slice(0, 80)}`);
 
     if (isRude(text)) {
       const politeReply = `Nah, ${getProfileGreeting(profile)}. Saya ini Pak Burhan, wali kelas 7D. Biasakan berbicara dengan sopan ya di WhatsApp. Setelah itu baru kita lanjutkan.`;
       await sock.sendMessage(jid, { text: politeReply }, { quoted: msg });
       saveTurn(conversationId, text, politeReply);
-      return;
-    }
-    if (isLowValueMessage(text)) {
-      const lowValueReply = buildLowValueReply(profile);
-      await sock.sendMessage(jid, { text: lowValueReply }, { quoted: msg });
       return;
     }
     if (isTimeQuestion(text)) {
@@ -1834,6 +1883,8 @@ async function handleMessage(sock, msg) {
     saveTurn(conversationId, text, reply);
   } catch (e) {
     console.error("handleMessage error:", e.message);
+  } finally {
+    groupQueueTicket?.release();
   }
 }
 
@@ -1961,6 +2012,8 @@ module.exports = {
   getCommandIdentity,
   mergeCommands,
   sanitizeVisionReply,
+  formatQueueReply,
+  reserveGroupRequest,
   parseImageCommand,
   getImageMessage,
   getSafeImageMimeType,

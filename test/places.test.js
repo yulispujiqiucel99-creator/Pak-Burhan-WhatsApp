@@ -5,6 +5,8 @@ const {
   getCommandIdentity,
   mergeCommands,
   sanitizeVisionReply,
+  formatQueueReply,
+  reserveGroupRequest,
   parseImageCommand,
   getImageMessage,
   getSafeImageMimeType,
@@ -31,6 +33,20 @@ const {
   normalizePlaceFeature,
   formatPlaceSummary,
 } = require("../index");
+
+test("membuat nomor antrean untuk permintaan grup yang masuk saat cooldown", async () => {
+  assert.equal(formatQueueReply(2), "Permintaan sedang diproses (nomor antrean 2).");
+  const first = reserveGroupRequest("queue-test@g.us");
+  assert.equal(first.position, 1);
+  assert.equal(first.shouldNotify, false);
+  await first.waitForTurn();
+  first.release();
+
+  const next = reserveGroupRequest("queue-test@g.us");
+  assert.equal(next.position, 1);
+  assert.equal(next.shouldNotify, true);
+  next.release();
+});
 
 test("membaca perintah aktivasi jadwal dari DM dan tautan grup", () => {
   const link = "https://chat.whatsapp.com/Kp4ULXH1ABh3OS2niLCe8P?s=sh";
