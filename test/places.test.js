@@ -2,6 +2,10 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  parseImageCommand,
+  getImageMessage,
+  getSafeImageMimeType,
+  validateVisionImage,
   parsePlaceCommand,
   getPlaceCategory,
   isLowValueMessage,
@@ -20,6 +24,22 @@ const {
   normalizePlaceFeature,
   formatPlaceSummary,
 } = require("../index");
+
+test("mem-parsing perintah !gambar dan menolak perintah tanpa pertanyaan", () => {
+  assert.deepEqual(parseImageCommand("!gambar tolong jelaskan soal ini"), { question: "tolong jelaskan soal ini" });
+  assert.deepEqual(parseImageCommand("!gambar"), { error: "empty" });
+  assert.equal(parseImageCommand("tolong lihat gambar"), null);
+  assert.deepEqual(getImageMessage({ imageMessage: { mimetype: "image/jpeg" } }), { mimetype: "image/jpeg" });
+});
+
+test("memvalidasi gambar vision berdasarkan tipe dan ukuran", () => {
+  const image = Buffer.from([1, 2, 3]);
+  assert.deepEqual(validateVisionImage(image, { mimetype: "image/jpeg" }), { mimeType: "image/jpeg" });
+  assert.deepEqual(validateVisionImage(image, { mimetype: "application/pdf" }), { error: "unsupported_type" });
+  assert.equal(getSafeImageMimeType({ mimetype: "image/png" }), "image/png");
+  assert.equal(getSafeImageMimeType({ mimetype: "image/gif" }), null);
+  assert.deepEqual(validateVisionImage(Buffer.alloc(20 * 1024 * 1024 + 1), { mimetype: "image/jpeg" }), { error: "too_large" });
+});
 
 test("mem-parsing perintah !tempat dengan lokasi", () => {
   assert.deepEqual(parsePlaceCommand("!tempat kafe di Solo Square"), {
