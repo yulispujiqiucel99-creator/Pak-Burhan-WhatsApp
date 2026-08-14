@@ -2003,6 +2003,11 @@ async function startBot() {
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
     for (const msg of messages) {
+      if (msg?.key?.remoteJid && msg.key.remoteJid !== "status@broadcast" && !msg.key.fromMe) {
+        sock.readMessages([msg.key]).catch((error) => {
+          console.warn("Gagal menandai pesan sebagai sudah dibaca:", error.message);
+        });
+      }
       await handleMessage(sock, msg);
     }
   });
