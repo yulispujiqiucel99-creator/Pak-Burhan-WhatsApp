@@ -7,7 +7,10 @@ const {
   isLowValueMessage,
   buildLowValueReply,
   consumeQuestionQuotaForStore,
+  getQuestionQuotaStatusForStore,
   buildQuestionLimitReply,
+  buildQuotaStatusReply,
+  buildAdminStatusReply,
   isGroupRestTime,
   normalizePlaceFeature,
   formatPlaceSummary,
@@ -108,4 +111,33 @@ test("menutup respons grup pada 21.30 sampai sebelum 04.00 WIB", () => {
   assert.equal(isGroupRestTime(new Date("2026-08-14T14:30:00.000Z")), true);
   assert.equal(isGroupRestTime(new Date("2026-08-14T20:59:00.000Z")), true);
   assert.equal(isGroupRestTime(new Date("2026-08-14T21:00:00.000Z")), false);
+});
+
+test("menampilkan sisa kuota dan waktu reset tanpa mengubah pemakaian", () => {
+  const usage = {
+    "235656601194672": { windowStartedAt: 1_700_000_000_000, count: 7 },
+  };
+  const now = 1_700_000_100_000;
+  const quota = getQuestionQuotaStatusForStore(usage, "235656601194672", now);
+  assert.deepEqual(quota, {
+    used: 7,
+    remaining: 13,
+    resetAt: new Date(1_700_086_400_000),
+  });
+  assert.equal(usage["235656601194672"].count, 7);
+});
+
+test("membuat teks !sisa dan !status tanpa mengekspos API key", () => {
+  const quotaText = buildQuotaStatusReply(
+    { name: "Naufal", gender: "male" },
+    "belum-pernah-mengirim-pertanyaan",
+    1_700_000_000_000
+  );
+  assert.match(quotaText, /Sisa pertanyaan: 20/);
+  assert.match(quotaText, /Mas Naufal/);
+
+  const statusText = buildAdminStatusReply("belum-pernah-mengirim-pertanyaan", 1_700_000_000_000);
+  assert.match(statusText, /Status Pak Burhan/);
+  assert.match(statusText, /Model Groq:/);
+  assert.doesNotMatch(statusText, /gsk_|sk-/i);
 });

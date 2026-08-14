@@ -39,6 +39,12 @@ const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || "").trim();
 const SETTINGS_REFRESH_MS = 60 * 1000;
 let activeGroqKeyIndex = 0;
+const BOT_RUNTIME = {
+  startedAt: new Date(),
+  connectionState: "menyiapkan",
+  connectedAt: null,
+  lastDisconnectAt: null,
+};
 
 const AUTH_DIR = path.join(__dirname, "auth_info");
 const DATA_DIR = path.join(__dirname, "data");
@@ -101,6 +107,8 @@ const DEFAULT_COMMANDS = [
   { command: `${PREFIX}help / ${PREFIX}menu`, description: "Menampilkan daftar perintah terbaru." },
   { command: `${PREFIX}cari [pertanyaan]`, description: "Mencari informasi di internet sebelum menjawab." },
   { command: `${PREFIX}tempat [jenis/nama] di [lokasi]`, description: "Mencari satu tempat dan mengirim satu lokasi yang dapat dibuka di WhatsApp. Contoh: !tempat kafe di Solo." },
+  { command: `${PREFIX}sisa`, description: "Menampilkan sisa kuota pertanyaan Anda dan waktu resetnya." },
+  { command: `${PREFIX}status`, description: "Khusus DM admin: menampilkan status koneksi, layanan, kuota, dan jadwal bot." },
   { command: `${PREFIX}profil ulang / ${PREFIX}reset profil`, description: "Menghapus nama, gender, dan riwayat chat Anda untuk diisi ulang." },
   { command: "Tag di grup", description: "Tag bot lalu tulis pertanyaan; bot diam pada @semua atau @everyone." },
 ];
@@ -338,6 +346,73 @@ function consumeQuestionQuota(lid, now = Date.now()) {
 function buildQuestionLimitReply(profile) {
   const honorific = profile?.gender === "female" ? "mbak" : "mas";
   return `waduh ${honorific} udh limit nih tunggu sampai 24jam ya saya juga mau istirahat`;
+}
+
+function getQuestionQuotaStatusForStore(usageStore, lid, now = Date.now()) {
+  const existing = usageStore[lid];
+  const windowStartedAt = Number(existing?.windowStartedAt);
+  const count = Number(existing?.count);
+  const isActive =
+    existing &&
+    Number.isFinite(windowStartedAt) &&
+    Number.isInteger(count) &&
+    count >= 0 &&
+    now >= windowStartedAt &&
+    now - windowStartedAt < DAILY_QUESTION_WINDOW_MS;
+  const used = isActive ? Math.min(count, DAILY_QUESTION_LIMIT) : 0;
+  return {
+    used,
+    remaining: Math.max(0, DAILY_QUESTION_LIMIT - used),
+    resetAt: isActive ? new Date(windowStartedAt + DAILY_QUESTION_WINDOW_MS) : null,
+  };
+}
+
+function formatBotDateTime(date) {
+  try {
+    return new Intl.DateTimeFormat("id-ID", {
+      timeZone: BOT_SETTINGS.timezone,
+      weekday: "long",
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+      timeZoneName: "short",
+    }).format(date);
+  } catch {
+    return date.toISOString();
+  }
+}
+
+function buildQuotaStatusReply(profile, lid, now = Date.now()) {
+  const quota = getQuestionQuotaStatusForStore(QUESTION_USAGE, lid, now);
+  const resetText = quota.resetAt
+    ? `Reset kuota: ${formatBotDateTime(quota.resetAt)}`
+    : "Reset kuota: dimulai saat pertanyaan pertama Anda diproses.";
+  return `Nah, ${getProfileGreeting(profile)}.\n\nKuota terpakai: ${quota.used}/${DAILY_QUESTION_LIMIT}\nSisa pertanyaan: ${quota.remaining}\n${resetText}`;
+}
+
+function buildAdminStatusReply(lid, now = Date.now()) {
+  const quota = getQuestionQuotaStatusForStore(QUESTION_USAGE, lid, now);
+  const connectedSince = BOT_RUNTIME.connectedAt
+    ? formatBotDateTime(BOT_RUNTIME.connectedAt)
+    : "belum terhubung pada sesi ini";
+  const groupMode = isGroupRestTime(now) ? "Istirahat sampai 04.00 WIB" : "Aktif sampai 21.30 WIB";
+  const resetText = quota.resetAt ? formatBotDateTime(quota.resetAt) : "belum dimulai";
+  return [
+    "Status Pak Burhan",
+    "",
+    `WhatsApp: ${BOT_RUNTIME.connectionState}`,
+    `Terhubung sejak: ${connectedSince}`,
+    `Groq: ${GROQ_API_KEYS.length ? `siap (${GROQ_API_KEYS.length} key dikonfigurasi)` : "belum dikonfigurasi"}`,
+    `Model Groq: ${BOT_SETTINGS.groq_model}`,
+    `Geoapify: ${GEOAPIFY_API_KEY ? "siap" : "belum dikonfigurasi"}`,
+    `Kuota admin: ${quota.used}/${DAILY_QUESTION_LIMIT} terpakai, ${quota.remaining} tersisa`,
+    `Reset kuota admin: ${resetText}`,
+    `Grup: ${groupMode}`,
+    `Zona waktu: ${BOT_SETTINGS.timezone}`,
+  ].join("\n");
 }
 
 function trimHistory(hist) {
@@ -1132,6 +1207,15 @@ async function handleMessage(sock, msg) {
       return;
     }
 
+    if (lower === `${PREFIX}status`) {
+      if (isGroup || senderLid !== BOT_SETTINGS.private_allowed_lid) {
+        await sock.sendMessage(jid, { text: "Perintah !status hanya dapat dipakai admin melalui chat DM." }, { quoted: msg });
+        return;
+      }
+      await sock.sendMessage(jid, { text: buildAdminStatusReply(senderLid) }, { quoted: msg });
+      return;
+    }
+
     if (lower === `${PREFIX}profil ulang` || lower === `${PREFIX}reset profil`) {
       delete PROFILES[profileId];
       delete MEMORY[conversationId];
@@ -1152,6 +1236,11 @@ async function handleMessage(sock, msg) {
     }
 
     const profile = onboarding.profile;
+    if (lower === `${PREFIX}sisa`) {
+      await sock.sendMessage(jid, { text: buildQuotaStatusReply(profile, senderId) }, { quoted: msg });
+      return;
+    }
+
     const now = Date.now();
     if (cooldown.has(conversationId) && now - cooldown.get(conversationId) < COOLDOWN_MS) {
       return;
@@ -1320,6 +1409,7 @@ async function startBot() {
 
   sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect, qr } = update;
+    if (connection === "connecting") BOT_RUNTIME.connectionState = "menghubungkan";
 
     if (qr && AUTH_METHOD !== "pairing") {
       const qrLink = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(qr)}`;
@@ -1349,6 +1439,8 @@ async function startBot() {
     }
 
     if (connection === "open") {
+      BOT_RUNTIME.connectionState = "terhubung";
+      BOT_RUNTIME.connectedAt = new Date();
       reconnectAttempts = 0;
       console.log("✅ Bot sudah terhubung ke WhatsApp!");
       console.log("Nomor:", sock.user?.id?.split(":")[0] || "-");
@@ -1356,6 +1448,8 @@ async function startBot() {
     }
 
     if (connection === "close") {
+      BOT_RUNTIME.connectionState = "terputus";
+      BOT_RUNTIME.lastDisconnectAt = new Date();
       const code = lastDisconnect?.error?.output?.statusCode;
       const shouldReconnect = code !== DisconnectReason.loggedOut;
 
@@ -1395,7 +1489,10 @@ module.exports = {
   isLowValueMessage,
   buildLowValueReply,
   consumeQuestionQuotaForStore,
+  getQuestionQuotaStatusForStore,
   buildQuestionLimitReply,
+  buildQuotaStatusReply,
+  buildAdminStatusReply,
   isGroupRestTime,
   isGroupRestAnnouncementTime,
   normalizePlaceFeature,

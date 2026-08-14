@@ -8,7 +8,7 @@ Bot mendukung login melalui **QR Code** atau **Pairing Code**, percakapan AI den
 
 Untuk menghemat limit AI, satu pengguna atau percakapan grup memiliki **cooldown 20 detik** setelah mengirim pesan yang diproses. Basa-basi sederhana seperti sapaan, pesan tes, ucapan terima kasih, dan tawa singkat tidak diteruskan ke Groq; bot mengirim respons hemat-limit dengan panggilan Mas atau Mbak sesuai profil.
 
-Setiap LID memiliki paling banyak **20 pertanyaan dalam jendela 24 jam**. Yang dihitung adalah permintaan yang benar-benar akan diproses, termasuk pencarian tempat dan pencarian internet; onboarding, `!help`, respons waktu, moderasi, serta basa-basi tidak menghabiskan kuota. Saat kuota penuh, bot mengirimkan pesan tunggu 24 jam. Kuota tersimpan di volume Railway sehingga tidak hilang saat bot restart.
+Setiap LID memiliki paling banyak **20 pertanyaan dalam jendela 24 jam**. Yang dihitung adalah permintaan yang benar-benar akan diproses, termasuk pencarian tempat dan pencarian internet; onboarding, `!help`, `!sisa`, `!status`, respons waktu, moderasi, serta basa-basi tidak menghabiskan kuota. Saat kuota penuh, bot mengirimkan pesan tunggu 24 jam. Kuota tersimpan di volume Railway sehingga tidak hilang saat bot restart.
 
 Bot beristirahat di seluruh grup setiap hari pada **21.30–04.00 WIB**. Tepat pukul 21.30, bot mengirim pesan penutup satu kali ke tiap grup lalu tidak merespons pesan grup—termasuk dari admin grup—sampai pukul 04.00. Chat DM dari LID admin tetap tersedia 24 jam, tetapi tetap mengikuti batas 20 pertanyaan per 24 jam.
 
@@ -62,6 +62,12 @@ Tambahkan `GEOAPIFY_API_KEY` di **Railway → Variables**, lalu gunakan perintah
 ```
 
 Bot akan mengirim rangkuman hasil serta satu pesan lokasi interaktif. Ketuk pesan lokasi tersebut di WhatsApp untuk membukanya di aplikasi peta. Hasil bersumber dari data Geoapify/OpenStreetMap dan dapat berubah; selalu konfirmasi detail operasional langsung kepada tempat terkait.
+
+## Memeriksa Kuota dan Status
+
+Gunakan `!sisa` setelah profil lengkap untuk melihat kuota terpakai, sisa pertanyaan, dan waktu reset kuota LID Anda. Perintah ini tidak mengurangi kuota dan dapat digunakan di DM maupun grup selama bot sedang aktif.
+
+Perintah `!status` **hanya** dapat digunakan dari DM oleh LID admin yang diizinkan. Laporan ini tidak memuat API key; isinya hanya status koneksi WhatsApp, kesiapan Groq dan Geoapify, model Groq aktif, kuota admin, status jam istirahat grup, serta zona waktu bot.
 
 ## Login Ulang
 
