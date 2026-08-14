@@ -18,6 +18,8 @@ const {
   isGroupRestTime,
   getClassScheduleDayKey,
   parseClassScheduleDay,
+  getUpcomingScheduleDate,
+  parseNaturalScheduleRequest,
   formatClassScheduleMessage,
   formatClassScheduleDate,
   isClassScheduleDeliveryTime,
@@ -192,4 +194,21 @@ test("membaca hari jadwal dan hanya mengirim pada pukul 17.00 atau 20.00 WIB", (
   assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-17T10:00:00.000Z")), true);
   assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-17T13:00:00.000Z")), true);
   assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-17T11:00:00.000Z")), false);
+});
+
+test("memahami pertanyaan jadwal natural untuk hari ini, besok, dan nama hari", () => {
+  const fridayWib = new Date("2026-08-14T10:00:00.000Z");
+  const tomorrow = parseNaturalScheduleRequest("Pak, jadwal besok apa?", fridayWib);
+  assert.equal(tomorrow.dayKey, "sabtu");
+  assert.equal(tomorrow.reference, "besok");
+  assert.equal(formatClassScheduleDate(tomorrow.targetDate), "15 Agustus 2026, sabtu");
+
+  const monday = parseNaturalScheduleRequest("Pelajaran Senin apa, Pak?", fridayWib);
+  assert.equal(monday.dayKey, "senin");
+  assert.equal(formatClassScheduleDate(monday.targetDate), "17 Agustus 2026, senin");
+  assert.equal(getUpcomingScheduleDate("senin", fridayWib).toISOString(), monday.targetDate.toISOString());
+
+  const today = parseNaturalScheduleRequest("Pak, piket hari ini siapa?", fridayWib);
+  assert.equal(today.dayKey, "jumat");
+  assert.equal(parseNaturalScheduleRequest("Pak, kamu baik?", fridayWib), null);
 });

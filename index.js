@@ -1275,6 +1275,45 @@ function parseClassScheduleDay(text, date = new Date()) {
   return WEEKDAY_ALIASES[day] || "";
 }
 
+function addCalendarDays(date, days) {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function getUpcomingScheduleDate(dayKey, date = new Date()) {
+  const dayOrder = ["minggu", "senin", "selasa", "rabu", "kamis", "jumat", "sabtu"];
+  const currentIndex = dayOrder.indexOf(getClassScheduleDayKey(date));
+  const targetIndex = dayOrder.indexOf(dayKey);
+  if (currentIndex < 0 || targetIndex < 0) return date;
+  return addCalendarDays(date, (targetIndex - currentIndex + 7) % 7);
+}
+
+function parseNaturalScheduleRequest(text, date = new Date()) {
+  const normalized = String(text || "")
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return null;
+
+  const refersToSchedule = /\b(jadwal|pelajaran|mapel|mata pelajaran|piket|seragam)\b/.test(normalized);
+  if (!refersToSchedule) return null;
+
+  if (/\b(besok|esok)\b/.test(normalized)) {
+    const targetDate = addCalendarDays(date, 1);
+    return { dayKey: getClassScheduleDayKey(targetDate), targetDate, reference: "besok" };
+  }
+  if (/\b(hari ini|sekarang)\b/.test(normalized)) {
+    return { dayKey: getClassScheduleDayKey(date), targetDate: date, reference: "hari ini" };
+  }
+
+  const matchedDay = Object.keys(WEEKDAY_ALIASES).find((day) => new RegExp(`\\b${day}\\b`).test(normalized));
+  if (matchedDay) {
+    const dayKey = WEEKDAY_ALIASES[matchedDay];
+    return { dayKey, targetDate: getUpcomingScheduleDate(dayKey, date), reference: matchedDay };
+  }
+  return null;
+}
+
 function isClassScheduleDeliveryTime(date = new Date()) {
   const { hour, minute } = getZonedClockParts(date);
   return CLASS_SCHEDULE_DELIVERY_MINUTES.has(hour * 60 + minute);
@@ -1501,6 +1540,16 @@ async function handleMessage(sock, msg) {
         return;
       }
       await sock.sendMessage(jid, { text: formatClassScheduleMessage(dayKey) }, { quoted: msg });
+      return;
+    }
+
+    const naturalSchedule = parseNaturalScheduleRequest(text);
+    if (naturalSchedule) {
+      await sock.sendMessage(
+        jid,
+        { text: formatClassScheduleMessage(naturalSchedule.dayKey, naturalSchedule.targetDate) },
+        { quoted: msg }
+      );
       return;
     }
 
@@ -1853,6 +1902,9 @@ module.exports = {
   isGroupRestAnnouncementTime,
   getClassScheduleDayKey,
   parseClassScheduleDay,
+  addCalendarDays,
+  getUpcomingScheduleDate,
+  parseNaturalScheduleRequest,
   formatClassScheduleMessage,
   formatClassScheduleDate,
   isClassScheduleDeliveryTime,

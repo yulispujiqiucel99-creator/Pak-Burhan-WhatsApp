@@ -73,6 +73,8 @@ Bot hanya memproses foto JPG, PNG, atau WebP dengan ukuran maksimum **20 MB**. S
 
 Perintah `!jadwal` menampilkan satu pesan yang memuat daftar pelajaran, piket kelas, dan piket MBG untuk hari berjalan. Untuk melihat hari tertentu, gunakan `!jadwal senin` sampai `!jadwal minggu`. Sabtu dan Minggu akan menampilkan informasi libur.
 
+Bot juga memahami pertanyaan jadwal tanpa perintah, misalnya `Pak, jadwal besok apa?`, `Piket hari ini siapa?`, atau `Pelajaran Senin apa, Pak?`. Bot menentukan hari berdasarkan **WIB** dan menjawab langsung dari data jadwal, sehingga pertanyaan tersebut tidak memakai kuota AI.
+
 Agar pengiriman otomatis tidak masuk ke grup yang keliru, admin harus masuk ke grup kelas tujuan lalu mengirim **`@bot !jadwal aktifkan`**. Setelah aktif, bot mengirimkan pesan jadwal kelas pada **17.00 WIB** dan **20.00 WIB** setiap hari. Pengiriman Sabtu dan Minggu berisi informasi libur. Admin dapat menghentikannya dengan `!jadwal nonaktifkan`.
 
 ## Memeriksa Kuota dan Status
