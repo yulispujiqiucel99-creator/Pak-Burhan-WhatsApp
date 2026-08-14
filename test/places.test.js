@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const {
   getCommandIdentity,
   mergeCommands,
+  sanitizeVisionReply,
   parseImageCommand,
   getImageMessage,
   getSafeImageMimeType,
@@ -28,6 +29,13 @@ const {
   normalizePlaceFeature,
   formatPlaceSummary,
 } = require("../index");
+
+test("membuang reasoning internal dari hasil analisis gambar", () => {
+  const withThink = "<think>Langkah internal yang tidak boleh tampil.</think>\n\nHalo Mas, jawaban akhirnya sudah benar. 📚";
+  assert.equal(sanitizeVisionReply(withThink), "Halo Mas, jawaban akhirnya sudah benar. 📚");
+  assert.equal(sanitizeVisionReply("Jawaban biasa tanpa reasoning."), "Jawaban biasa tanpa reasoning.");
+  assert.equal(sanitizeVisionReply("<analysis>Catatan internal</analysis>Hasil akhir."), "Hasil akhir.");
+});
 
 test("menyatukan alias reset profil agar bantuan tidak duplikat", () => {
   assert.equal(getCommandIdentity("!profil ulang"), "profile-reset");
