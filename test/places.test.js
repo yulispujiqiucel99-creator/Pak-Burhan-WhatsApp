@@ -2,6 +2,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  getCommandIdentity,
+  mergeCommands,
   parseImageCommand,
   getImageMessage,
   getSafeImageMimeType,
@@ -26,6 +28,16 @@ const {
   normalizePlaceFeature,
   formatPlaceSummary,
 } = require("../index");
+
+test("menyatukan alias reset profil agar bantuan tidak duplikat", () => {
+  assert.equal(getCommandIdentity("!profil ulang"), "profile-reset");
+  assert.equal(getCommandIdentity("!reset profil"), "profile-reset");
+  const commands = mergeCommands([
+    { command: "!profil ulang", description: "Reset profil lama." },
+    { command: "!reset profil", description: "Reset profil duplikat." },
+  ]);
+  assert.equal(commands.filter((item) => getCommandIdentity(item.command) === "profile-reset").length, 1);
+});
 
 test("mem-parsing perintah !gambar dan menolak perintah tanpa pertanyaan", () => {
   assert.deepEqual(parseImageCommand("!gambar tolong jelaskan soal ini"), { question: "tolong jelaskan soal ini" });

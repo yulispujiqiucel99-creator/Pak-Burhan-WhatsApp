@@ -19,7 +19,7 @@ values (
     'bot_name', 'Pak Burhan',
     'timezone', 'Asia/Jakarta',
     'private_allowed_lid', '235656601194672',
-    'groq_model', 'llama-3.1-8b-instant',
+    'groq_model', 'openai/gpt-oss-120b',
     'max_history_turns', 4,
     'mass_mention_terms', jsonb_build_array('semua', 'everyone', 'all', 'here'),
     'commands', jsonb_build_array(

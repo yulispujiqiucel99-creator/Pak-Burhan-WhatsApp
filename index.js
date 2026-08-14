@@ -28,7 +28,7 @@ const GROQ_API_KEYS = [...new Set(
     .map((key) => key.trim())
     .filter(Boolean)
 )];
-const DEFAULT_GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.1-8b-instant";
+const DEFAULT_GROQ_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 const GROQ_BASE_URL = (process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1").replace(/\/+$/, "");
 const DEFAULT_PRIVATE_ALLOWED_LID = (process.env.PRIVATE_ALLOWED_LID || "").replace(/\D/g, "");
 const DEFAULT_BOT_TIMEZONE = process.env.BOT_TIMEZONE || "Asia/Jakarta";
@@ -178,16 +178,31 @@ const DEFAULT_BOT_SETTINGS = {
 let BOT_SETTINGS = { ...DEFAULT_BOT_SETTINGS, commands: [...DEFAULT_COMMANDS] };
 let lastSettingsRefresh = 0;
 
+function getCommandIdentity(command) {
+  const normalized = String(command || "").toLowerCase().replace(/\s+/g, " ").trim();
+  if ([`${PREFIX}profil ulang`, `${PREFIX}reset profil`, `${PREFIX}profil ulang / ${PREFIX}reset profil`].includes(normalized)) {
+    return "profile-reset";
+  }
+  if ([`${PREFIX}help`, `${PREFIX}menu`, `${PREFIX}help / ${PREFIX}menu`].includes(normalized)) {
+    return "help-menu";
+  }
+  return normalized;
+}
+
 function mergeCommands(configuredCommands) {
-  const configuredByCommand = new Map(
-    configuredCommands.map((item) => [item.command.toLowerCase(), item])
-  );
+  const configuredByCommand = new Map();
+  for (const item of configuredCommands) {
+    const identity = getCommandIdentity(item.command);
+    if (!configuredByCommand.has(identity)) configuredByCommand.set(identity, item);
+  }
+  const defaultIdentities = new Set(DEFAULT_COMMANDS.map((item) => getCommandIdentity(item.command)));
   const mergedDefaults = DEFAULT_COMMANDS.map((item) =>
-    configuredByCommand.get(item.command.toLowerCase()) || item
+    configuredByCommand.get(getCommandIdentity(item.command)) || item
   );
-  const customCommands = configuredCommands.filter(
-    (item) => !DEFAULT_COMMANDS.some((defaultItem) => defaultItem.command.toLowerCase() === item.command.toLowerCase())
-  );
+  const customCommands = [];
+  for (const item of configuredByCommand.values()) {
+    if (!defaultIdentities.has(getCommandIdentity(item.command))) customCommands.push(item);
+  }
   return [...mergedDefaults, ...customCommands];
 }
 
@@ -938,7 +953,7 @@ async function askAI(userId, prompt, profile) {
   const profileGreeting = getProfileGreeting(profile);
   const botName = BOT_SETTINGS.bot_name;
   const dynamicSystemPrompt = SYSTEM_PROMPT.replaceAll("Pak Burhan", botName);
-  const systemPromptWithTime = `${dynamicSystemPrompt}\n\nProfil pengguna saat ini:\n- Nama: ${profile.name}\n- Gender: ${profile.gender === "female" ? "perempuan" : "laki-laki"}\n- Panggilan wajib dan satu-satunya: ${profileGreeting}\nSelalu gunakan panggilan tersebut secara utuh bila menyapa pengguna. Jangan memakai panggilan lain, jangan mengubah nama, dan jangan memanggil pengguna dengan nama bot.\n\nAturan kualitas jawaban:\n- Jawab inti pertanyaan terlebih dahulu dengan kalimat yang jelas dan lengkap, baru tambahkan penjelasan bila diperlukan.\n- Untuk pertanyaan waktu, sebutkan hari, tanggal, dan jam yang diberikan di bawah ini secara langsung; jangan menyuruh pengguna mengecek ponsel.\n- Gunakan 1-2 emoji relevan untuk jawaban umum agar ramah dan ceria, tetapi jangan berlebihan.\n\nInformasi waktu saat ini:\n- Zona waktu acuan: ${BOT_SETTINGS.timezone}\n- Tanggal dan jam saat ini: ${getCurrentDateTime()}\nGunakan informasi ini saat menjawab pertanyaan yang berkaitan dengan hari, tanggal, bulan, tahun, atau jam. Jangan mengarang waktu yang berbeda.`;
+  const systemPromptWithTime = `${dynamicSystemPrompt}\n\nProfil pengguna saat ini:\n- Nama: ${profile.name}\n- Gender: ${profile.gender === "female" ? "perempuan" : "laki-laki"}\n- Panggilan wajib dan satu-satunya: ${profileGreeting}\nSelalu gunakan panggilan tersebut secara utuh bila menyapa pengguna. Jangan memakai panggilan lain, jangan mengubah nama, dan jangan memanggil pengguna dengan nama bot.\n\nAturan kualitas jawaban:\n- Utamakan ketelitian daripada kecepatan. Pahami pertanyaan sepenuhnya sebelum menjawab.\n- Jawab inti pertanyaan terlebih dahulu, lalu berikan penjelasan yang runtut dan cukup lengkap. Untuk materi pelajaran, gunakan langkah-langkah dan contoh sederhana bila membantu.\n- Jangan memberi jawaban terlalu pendek jika pertanyaan membutuhkan alasan, langkah, atau penjelasan. Namun untuk pertanyaan sederhana, tetap jawab ringkas dan langsung.\n- Bila ada informasi yang kurang jelas atau tidak pasti, katakan batasannya dengan jujur; jangan mengarang.\n- Untuk pertanyaan waktu, sebutkan hari, tanggal, dan jam yang diberikan di bawah ini secara langsung; jangan menyuruh pengguna mengecek ponsel.\n- Gunakan 1-2 emoji relevan untuk jawaban umum agar ramah dan ceria, tetapi jangan berlebihan.\n\nInformasi waktu saat ini:\n- Zona waktu acuan: ${BOT_SETTINGS.timezone}\n- Tanggal dan jam saat ini: ${getCurrentDateTime()}\nGunakan informasi ini saat menjawab pertanyaan yang berkaitan dengan hari, tanggal, bulan, tahun, atau jam. Jangan mengarang waktu yang berbeda.`;
   const history = MEMORY[userId] || [];
   const messages = [
     { role: "system", content: systemPromptWithTime },
@@ -960,8 +975,11 @@ async function askAI(userId, prompt, profile) {
         {
           model: BOT_SETTINGS.groq_model,
           messages,
-          temperature: 0.7,
-          max_completion_tokens: 1024,
+          temperature: 0.55,
+          max_completion_tokens: 2048,
+          ...(BOT_SETTINGS.groq_model.startsWith("openai/gpt-oss-")
+            ? { reasoning_effort: "medium", include_reasoning: false }
+            : {}),
         },
         {
           headers: {
@@ -1885,6 +1903,8 @@ async function startBot() {
 }
 
 module.exports = {
+  getCommandIdentity,
+  mergeCommands,
   parseImageCommand,
   getImageMessage,
   getSafeImageMimeType,

@@ -1,6 +1,6 @@
 # Pak Burhan WhatsApp Bot
 
-Bot WhatsApp persona **Pak Burhan** sebagai wali kelas 7D. Proyek ini menggunakan **Node.js, Baileys, Groq API**, serta Tavily dan Geoapify sebagai integrasi opsional.
+Bot WhatsApp persona **Pak Burhan** sebagai wali kelas 7D. Proyek ini menggunakan **Node.js, Baileys, Groq API**, serta Tavily dan Geoapify sebagai integrasi opsional. Model chat bawaan adalah **`openai/gpt-oss-120b`** dengan reasoning tingkat sedang agar jawaban lebih teliti.
 
 ## Fitur
 
@@ -30,7 +30,7 @@ Isi `GROQ_API_KEYS` pada `.env` sebelum menjalankan bot. API key dibuat dari [Gr
 | `BOT_NUMBER` | Wajib untuk metode `pairing`; gunakan format `628...`. |
 | `GROQ_API_KEYS` | Satu atau beberapa API key Groq, dipisahkan koma. Saat error 429, bot mencoba key berikutnya secara otomatis. |
 | `GROQ_API_KEY` | Kompatibilitas untuk konfigurasi lama dengan satu key; lebih disarankan memakai `GROQ_API_KEYS`. |
-| `GROQ_MODEL` | Fallback model `llama-3.1-8b-instant`; setelah Supabase aktif, model diedit pada kolom `settings`. |
+| `GROQ_MODEL` | Fallback model `openai/gpt-oss-120b`; setelah Supabase aktif, model diedit pada kolom `settings.groq_model`. |
 | `GROQ_BASE_URL` | Default `https://api.groq.com/openai/v1`; biasanya tidak perlu diubah. |
 | `SUPABASE_URL` | URL proyek Supabase yang menyimpan pengaturan bot. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service-role key Supabase untuk bot di Railway; rahasia dan tidak boleh dibagikan. |
@@ -42,7 +42,7 @@ Isi `GROQ_API_KEYS` pada `.env` sebelum menjalankan bot. API key dibuat dari [Gr
 
 ## Pengaturan yang Dapat Diedit
 
-Pengaturan seperti nama bot, zona waktu, LID privat, model Groq, batas riwayat, mention massal, dan daftar `!help` dapat dikelola dari Supabase. Jalankan migrasi lalu ikuti panduan di [`supabase/README.md`](./supabase/README.md). Railway hanya menyimpan koneksi rahasia satu kali ke Supabase; perubahan pengaturan harian dilakukan dari dashboard Supabase.
+Pengaturan seperti nama bot, zona waktu, LID privat, model Groq, batas riwayat, mention massal, dan daftar `!help` dapat dikelola dari Supabase. Rekomendasi model saat ini adalah `openai/gpt-oss-120b`; bot memakai reasoning tingkat sedang dan menyembunyikan reasoning internal agar jawaban lebih teliti tanpa menampilkan proses berpikir ke pengguna. Jalankan migrasi lalu ikuti panduan di [`supabase/README.md`](./supabase/README.md). Railway hanya menyimpan koneksi rahasia satu kali ke Supabase; perubahan pengaturan harian dilakukan dari dashboard Supabase.
 
 ## Deployment Railway
 
