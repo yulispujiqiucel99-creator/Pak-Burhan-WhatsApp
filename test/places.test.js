@@ -12,6 +12,10 @@ const {
   buildQuotaStatusReply,
   buildAdminStatusReply,
   isGroupRestTime,
+  getClassScheduleDayKey,
+  parseClassScheduleDay,
+  formatClassScheduleMessage,
+  isClassScheduleDeliveryTime,
   normalizePlaceFeature,
   formatPlaceSummary,
 } = require("../index");
@@ -140,4 +144,28 @@ test("membuat teks !sisa dan !status tanpa mengekspos API key", () => {
   assert.match(statusText, /Status Pak Burhan/);
   assert.match(statusText, /Model Groq:/);
   assert.doesNotMatch(statusText, /gsk_|sk-/i);
+});
+
+test("membuat satu pesan jadwal Senin berisi pelajaran dan dua piket", () => {
+  const message = formatClassScheduleMessage("senin");
+  assert.match(message, /Jadwal Kelas VII D — Senin/);
+  assert.match(message, /1\. Upacara/);
+  assert.match(message, /2\. Matematika/);
+  assert.match(message, /PAI dan BP/);
+  assert.match(message, /Piket kelas: Farida, Rara, Nayla, Loveya, Lulu, Satria, Kenzie/);
+  assert.match(message, /Piket MBG: Farida, Nayla, Lulu, Satria, Alby, Amanda/);
+});
+
+test("menampilkan pesan libur pada Sabtu dan Minggu", () => {
+  assert.match(formatClassScheduleMessage("sabtu"), /Hari ini libur/);
+  assert.match(formatClassScheduleMessage("minggu"), /Hari ini libur/);
+});
+
+test("membaca hari jadwal dan hanya mengirim pada pukul 17.00 atau 20.00 WIB", () => {
+  assert.equal(parseClassScheduleDay("!jadwal kamis"), "kamis");
+  assert.equal(parseClassScheduleDay("!jadwal ahad"), "minggu");
+  assert.equal(getClassScheduleDayKey(new Date("2026-08-17T10:00:00.000Z")), "senin");
+  assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-17T10:00:00.000Z")), true);
+  assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-17T13:00:00.000Z")), true);
+  assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-17T11:00:00.000Z")), false);
 });

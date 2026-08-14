@@ -27,6 +27,8 @@ values (
       jsonb_build_object('command', '!help / !menu', 'description', 'Menampilkan daftar perintah terbaru.'),
       jsonb_build_object('command', '!cari [pertanyaan]', 'description', 'Mencari informasi di internet sebelum menjawab.'),
       jsonb_build_object('command', '!tempat [jenis/nama] di [lokasi]', 'description', 'Mencari satu tempat dan mengirim satu lokasi yang dapat dibuka di WhatsApp. Contoh: !tempat kafe di Solo.'),
+      jsonb_build_object('command', '!jadwal [hari]', 'description', 'Menampilkan pelajaran, piket kelas, dan piket MBG VII D. Contoh: !jadwal senin.'),
+      jsonb_build_object('command', '!jadwal aktifkan', 'description', 'Khusus admin di grup kelas: mengaktifkan kirim jadwal otomatis pukul 17.00 dan 20.00 WIB.'),
       jsonb_build_object('command', '!sisa', 'description', 'Menampilkan sisa kuota pertanyaan Anda dan waktu resetnya.'),
       jsonb_build_object('command', '!status', 'description', 'Khusus DM admin: menampilkan status koneksi, layanan, kuota, dan jadwal bot.'),
       jsonb_build_object('command', '!profil ulang', 'description', 'Menghapus nama, gender, dan riwayat chat Anda untuk diisi ulang.'),

@@ -57,6 +57,51 @@ const DAILY_QUESTION_WINDOW_MS = 24 * 60 * 60 * 1000;
 const GROUP_REST_START_MINUTES = 21 * 60 + 30;
 const GROUP_REST_END_MINUTES = 4 * 60;
 const GROUP_REST_MESSAGE = "akhirnya tugas saya selesai wah udh larut malam saya harus tidur secepatnya buat murid murid saya, hmm... ok alarm 04.00 udh saya jadwal buat persiapan💤😴";
+const CLASS_SCHEDULE_DELIVERY_MINUTES = new Set([17 * 60, 20 * 60]);
+
+const CLASS_WEEKLY_SCHEDULE = {
+  senin: {
+    label: "Senin",
+    lessons: ["Upacara", "Matematika", "PAI dan BP", "Pend. Pancasila", "Bhs. Indonesia", "IPS"],
+    classDuty: ["Farida", "Rara", "Nayla", "Loveya", "Lulu", "Satria", "Kenzie"],
+    mbgDuty: ["Farida", "Nayla", "Lulu", "Satria", "Alby", "Amanda"],
+  },
+  selasa: {
+    label: "Selasa",
+    lessons: ["Literasi", "Bhs. Inggris", "PJOK", "PAI dan BP", "Bhs. Indonesia", "Informatika"],
+    classDuty: ["Nadiah", "Vionna", "Humaira", "Altaf", "Ridwan", "Azka", "Kayana"],
+    mbgDuty: ["Vionna", "Altaf", "Ridwan", "Azka", "Fabian", "Queensa"],
+  },
+  rabu: {
+    label: "Rabu",
+    lessons: ["Literasi", "Matematika", "IPS", "IPA", "Bhs. Inggris"],
+    classDuty: ["Fabian", "Queensa", "Fazila", "Dewi", "Alby", "Amanda"],
+    mbgDuty: ["Fazila", "Rara", "Kayana", "Kenzie", "Kenzio", "Khanza"],
+  },
+  kamis: {
+    label: "Kamis",
+    lessons: ["Literasi", "IPA", "Pend. Pancasila", "Prakarya/SBDP", "Informatika", "PJOK", "Bhs. Indonesia"],
+    classDuty: ["Yodha", "Khanza", "Zayda", "Kinar", "Kenzio", "Nara"],
+    mbgDuty: ["Kinar", "Humaira", "Lintang", "Loveya", "Mayesa", "Naufal", "Nadiah"],
+  },
+  jumat: {
+    label: "Jumat",
+    lessons: ["Pagi Ceria", "Jumat Bersih", "Pembinaan Wali Kelas", "Bhs. Jawa", "Prakarya/SBDP"],
+    classDuty: ["Keefa", "Aqila", "Lintang", "Mayesa", "Naufal", "Azizah"],
+    mbgDuty: ["Keefa", "Aqila", "Azizah", "Yodha", "Zayda", "Nara", "Dewi"],
+  },
+};
+
+const WEEKDAY_ALIASES = {
+  senin: "senin",
+  selasa: "selasa",
+  rabu: "rabu",
+  kamis: "kamis",
+  jumat: "jumat",
+  sabtu: "sabtu",
+  minggu: "minggu",
+  ahad: "minggu",
+};
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -107,6 +152,8 @@ const DEFAULT_COMMANDS = [
   { command: `${PREFIX}help / ${PREFIX}menu`, description: "Menampilkan daftar perintah terbaru." },
   { command: `${PREFIX}cari [pertanyaan]`, description: "Mencari informasi di internet sebelum menjawab." },
   { command: `${PREFIX}tempat [jenis/nama] di [lokasi]`, description: "Mencari satu tempat dan mengirim satu lokasi yang dapat dibuka di WhatsApp. Contoh: !tempat kafe di Solo." },
+  { command: `${PREFIX}jadwal [hari]`, description: "Menampilkan pelajaran, piket kelas, dan piket MBG VII D. Contoh: !jadwal senin." },
+  { command: `${PREFIX}jadwal aktifkan`, description: "Khusus admin di grup kelas: mengaktifkan kirim jadwal otomatis pukul 17.00 dan 20.00 WIB." },
   { command: `${PREFIX}sisa`, description: "Menampilkan sisa kuota pertanyaan Anda dan waktu resetnya." },
   { command: `${PREFIX}status`, description: "Khusus DM admin: menampilkan status koneksi, layanan, kuota, dan jadwal bot." },
   { command: `${PREFIX}profil ulang / ${PREFIX}reset profil`, description: "Menghapus nama, gender, dan riwayat chat Anda untuk diisi ulang." },
@@ -203,8 +250,9 @@ function buildHelpText() {
 let MEMORY = {};
 let PROFILES = {};
 let QUESTION_USAGE = {};
-let BOT_STATE = { lastGroupRestDate: "" };
+let BOT_STATE = { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "" };
 let groupRestTimer = null;
+let classScheduleTimer = null;
 let memoryDirty = false;
 let memoryUpdateCount = 0;
 let lastMemorySave = Date.now();
@@ -246,10 +294,10 @@ function loadBotState() {
   try {
     if (fs.existsSync(BOT_STATE_FILE)) {
       const parsed = JSON.parse(fs.readFileSync(BOT_STATE_FILE, "utf8"));
-      BOT_STATE = parsed && typeof parsed === "object" ? parsed : { lastGroupRestDate: "" };
+      BOT_STATE = parsed && typeof parsed === "object" ? parsed : { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "" };
     }
   } catch {
-    BOT_STATE = { lastGroupRestDate: "" };
+    BOT_STATE = { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "" };
   }
 }
 
@@ -1053,6 +1101,89 @@ function cleanMentions(text) {
 }
 
 
+function getClassScheduleDayKey(date = new Date()) {
+  try {
+    const weekday = new Intl.DateTimeFormat("en-US", {
+      timeZone: BOT_SETTINGS.timezone,
+      weekday: "long",
+    }).format(date).toLowerCase();
+    return {
+      monday: "senin",
+      tuesday: "selasa",
+      wednesday: "rabu",
+      thursday: "kamis",
+      friday: "jumat",
+      saturday: "sabtu",
+      sunday: "minggu",
+    }[weekday] || "";
+  } catch {
+    return ["minggu", "senin", "selasa", "rabu", "kamis", "jumat", "sabtu"][date.getUTCDay()];
+  }
+}
+
+function formatClassScheduleMessage(dayKey) {
+  const schedule = CLASS_WEEKLY_SCHEDULE[dayKey];
+  if (!schedule) {
+    const label = dayKey === "sabtu" ? "Sabtu" : "Minggu";
+    return `Jadwal Kelas VII D — ${label}\n\nHari ini libur. Selamat beristirahat dan siapkan diri untuk sekolah berikutnya. 🙂`;
+  }
+
+  const lessons = schedule.lessons.map((lesson, index) => `${index + 1}. ${lesson}`).join("\n");
+  return [
+    `Jadwal Kelas VII D — ${schedule.label}`,
+    "",
+    "Pelajaran:",
+    lessons,
+    "",
+    `Piket kelas: ${schedule.classDuty.join(", ")}`,
+    `Piket MBG: ${schedule.mbgDuty.join(", ")}`,
+  ].join("\n");
+}
+
+function parseClassScheduleDay(text, date = new Date()) {
+  const parts = String(text || "").trim().toLowerCase().split(/\s+/);
+  const day = parts[1];
+  if (!day) return getClassScheduleDayKey(date);
+  return WEEKDAY_ALIASES[day] || "";
+}
+
+function isClassScheduleDeliveryTime(date = new Date()) {
+  const { hour, minute } = getZonedClockParts(date);
+  return CLASS_SCHEDULE_DELIVERY_MINUTES.has(hour * 60 + minute);
+}
+
+async function sendClassSchedule(sock, date = new Date()) {
+  if (!BOT_STATE.classScheduleGroupJid || !isClassScheduleDeliveryTime(date)) return false;
+  const { dateKey, hour, minute } = getZonedClockParts(date);
+  const deliveryKey = `${dateKey}-${hour}-${minute}`;
+  if (BOT_STATE.lastClassScheduleDeliveryKey === deliveryKey) return false;
+
+  const dayKey = getClassScheduleDayKey(date);
+  await sock.sendMessage(BOT_STATE.classScheduleGroupJid, { text: formatClassScheduleMessage(dayKey) });
+  BOT_STATE.lastClassScheduleDeliveryKey = deliveryKey;
+  saveBotState();
+  console.log(`Jadwal kelas terkirim ke grup aktif pada ${deliveryKey}.`);
+  return true;
+}
+
+function startClassScheduleScheduler(sock) {
+  if (classScheduleTimer) clearInterval(classScheduleTimer);
+  let lastCheckedMinute = "";
+  const checkSchedule = () => {
+    const now = new Date();
+    const { dateKey, hour, minute } = getZonedClockParts(now);
+    const minuteKey = `${dateKey}-${hour}-${minute}`;
+    if (minuteKey === lastCheckedMinute) return;
+    lastCheckedMinute = minuteKey;
+    sendClassSchedule(sock, now).catch((error) => {
+      console.warn("Scheduler jadwal kelas gagal:", error.message);
+    });
+  };
+  checkSchedule();
+  classScheduleTimer = setInterval(checkSchedule, 15 * 1000);
+  classScheduleTimer.unref?.();
+}
+
 function getZonedClockParts(date = new Date()) {
   try {
     const parts = new Intl.DateTimeFormat("en-CA", {
@@ -1204,6 +1335,44 @@ async function handleMessage(sock, msg) {
       lower === "menu"
     ) {
       await sock.sendMessage(jid, { text: buildHelpText() }, { quoted: msg });
+      return;
+    }
+
+    if (lower === `${PREFIX}jadwal aktifkan`) {
+      if (!isGroup || senderLid !== BOT_SETTINGS.private_allowed_lid) {
+        await sock.sendMessage(jid, { text: "Perintah ini hanya dapat dipakai admin melalui grup kelas yang ingin diaktifkan." }, { quoted: msg });
+        return;
+      }
+      BOT_STATE.classScheduleGroupJid = jid;
+      BOT_STATE.lastClassScheduleDeliveryKey = "";
+      saveBotState();
+      await sock.sendMessage(
+        jid,
+        { text: "Jadwal otomatis VII D sudah aktif di grup ini. Bot akan mengirim satu pesan jadwal harian pukul 17.00 dan 20.00 WIB. Gunakan @bot !jadwal untuk melihat jadwal hari ini." },
+        { quoted: msg }
+      );
+      return;
+    }
+
+    if (lower === `${PREFIX}jadwal nonaktifkan`) {
+      if (senderLid !== BOT_SETTINGS.private_allowed_lid) {
+        await sock.sendMessage(jid, { text: "Perintah ini khusus admin." }, { quoted: msg });
+        return;
+      }
+      BOT_STATE.classScheduleGroupJid = "";
+      BOT_STATE.lastClassScheduleDeliveryKey = "";
+      saveBotState();
+      await sock.sendMessage(jid, { text: "Pengiriman jadwal otomatis sudah dinonaktifkan." }, { quoted: msg });
+      return;
+    }
+
+    if (lower === `${PREFIX}jadwal` || lower.startsWith(`${PREFIX}jadwal `)) {
+      const dayKey = parseClassScheduleDay(text);
+      if (!dayKey) {
+        await sock.sendMessage(jid, { text: `Gunakan ${PREFIX}jadwal atau ${PREFIX}jadwal senin sampai ${PREFIX}jadwal minggu.` }, { quoted: msg });
+        return;
+      }
+      await sock.sendMessage(jid, { text: formatClassScheduleMessage(dayKey) }, { quoted: msg });
       return;
     }
 
@@ -1445,6 +1614,7 @@ async function startBot() {
       console.log("✅ Bot sudah terhubung ke WhatsApp!");
       console.log("Nomor:", sock.user?.id?.split(":")[0] || "-");
       startGroupRestScheduler(sock);
+      startClassScheduleScheduler(sock);
     }
 
     if (connection === "close") {
@@ -1495,6 +1665,10 @@ module.exports = {
   buildAdminStatusReply,
   isGroupRestTime,
   isGroupRestAnnouncementTime,
+  getClassScheduleDayKey,
+  parseClassScheduleDay,
+  formatClassScheduleMessage,
+  isClassScheduleDeliveryTime,
   normalizePlaceFeature,
   formatPlaceSummary,
 };
