@@ -32,6 +32,7 @@ const GROQ_BASE_URL = (process.env.GROQ_BASE_URL || "https://api.groq.com/openai
 const DEFAULT_PRIVATE_ALLOWED_LID = (process.env.PRIVATE_ALLOWED_LID || "").replace(/\D/g, "");
 const DEFAULT_BOT_TIMEZONE = process.env.BOT_TIMEZONE || "Asia/Jakarta";
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
+const GEOAPIFY_API_KEY = (process.env.GEOAPIFY_API_KEY || "").trim();
 const PREFIX = process.env.PREFIX || "!";
 const AUTH_METHOD = (process.env.AUTH_METHOD || "qr").toLowerCase();
 const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
@@ -92,6 +93,7 @@ const DEFAULT_COMMANDS = [
   { command: "Chat biasa", description: "Kirim pertanyaan setelah profil nama dan gender lengkap." },
   { command: `${PREFIX}help / ${PREFIX}menu`, description: "Menampilkan daftar perintah terbaru." },
   { command: `${PREFIX}cari [pertanyaan]`, description: "Mencari informasi di internet sebelum menjawab." },
+  { command: `${PREFIX}tempat [jenis/nama] di [lokasi]`, description: "Mencari tempat dan mengirim lokasi yang dapat dibuka di WhatsApp. Contoh: !tempat kafe di Solo." },
   { command: `${PREFIX}profil ulang / ${PREFIX}reset profil`, description: "Menghapus nama, gender, dan riwayat chat Anda untuk diisi ulang." },
   { command: "Tag di grup", description: "Tag bot lalu tulis pertanyaan; bot diam pada @semua atau @everyone." },
 ];
@@ -470,6 +472,154 @@ function formatSearchResults(results) {
   return lines.join("\n");
 }
 
+const PLACE_CATEGORY_KEYWORDS = [
+  { category: "entertainment.cinema", keywords: ["bioskop", "cinema", "cineplex", "xxi"] },
+  { category: "catering.cafe", keywords: ["kafe", "cafe", "kopi", "coffee shop"] },
+  { category: "catering.restaurant", keywords: ["restoran", "restaurant", "rumah makan", "tempat makan", "makan"] },
+  { category: "accommodation.hotel", keywords: ["hotel", "penginapan", "hostel"] },
+  { category: "healthcare.hospital", keywords: ["rumah sakit", "rs", "hospital"] },
+  { category: "healthcare.clinic_or_praxis", keywords: ["klinik", "clinic"] },
+  { category: "healthcare.pharmacy", keywords: ["apotek", "pharmacy"] },
+  { category: "commercial.shopping_mall", keywords: ["mall", "mal", "pusat belanja"] },
+  { category: "commercial.supermarket", keywords: ["supermarket", "super market", "hypermart"] },
+  { category: "commercial.convenience", keywords: ["minimarket", "alfamart", "indomaret"] },
+  { category: "education.school", keywords: ["sekolah", "sd", "smp", "sma"] },
+  { category: "education.university", keywords: ["kampus", "universitas", "university"] },
+  { category: "tourism.attraction", keywords: ["wisata", "tempat wisata", "objek wisata", "atraksi"] },
+  { category: "tourism", keywords: ["museum", "monumen", "cagar budaya"] },
+  { category: "leisure.park", keywords: ["taman", "park"] },
+];
+
+function parsePlaceCommand(text) {
+  const match = String(text || "")
+    .trim()
+    .match(new RegExp(`^${escapeRegExp(PREFIX)}tempat(?:\\s+(.+))?$`, "i"));
+  if (!match) return null;
+
+  const rawQuery = (match[1] || "").trim();
+  if (!rawQuery) return { error: "empty" };
+
+  const locationMatch = rawQuery.match(/^(.+?)\s+(?:di|dekat|sekitar)\s+(.+)$/i);
+  return {
+    rawQuery,
+    searchTerm: (locationMatch?.[1] || rawQuery).trim(),
+    location: (locationMatch?.[2] || "").trim(),
+  };
+}
+
+function getPlaceCategory(searchTerm) {
+  const normalized = String(searchTerm || "").toLowerCase();
+  const match = PLACE_CATEGORY_KEYWORDS.find((item) =>
+    item.keywords.some((keyword) => normalized.includes(keyword))
+  );
+  return match?.category || null;
+}
+
+function getPlaceCoordinates(place) {
+  const properties = place?.properties || {};
+  const longitude = Number(properties.lon ?? place?.geometry?.coordinates?.[0]);
+  const latitude = Number(properties.lat ?? place?.geometry?.coordinates?.[1]);
+  return Number.isFinite(latitude) && Number.isFinite(longitude)
+    ? { latitude, longitude }
+    : null;
+}
+
+function normalizePlaceFeature(feature) {
+  const properties = feature?.properties || {};
+  const coordinates = getPlaceCoordinates(feature);
+  if (!coordinates) return null;
+
+  const name = String(properties.name || properties.address_line1 || properties.formatted || "Tempat tanpa nama").trim();
+  const address = String(
+    properties.formatted ||
+      [properties.address_line1, properties.address_line2].filter(Boolean).join(", ") ||
+      "Alamat tidak tersedia"
+  ).trim();
+  const distance = Number(properties.distance);
+  return {
+    name: name.slice(0, 100),
+    address: address.slice(0, 500),
+    latitude: coordinates.latitude,
+    longitude: coordinates.longitude,
+    distanceMeters: Number.isFinite(distance) ? Math.round(distance) : null,
+  };
+}
+
+async function geocodeLocation(location) {
+  const { data } = await axios.get("https://api.geoapify.com/v1/geocode/search", {
+    params: {
+      text: location,
+      limit: 1,
+      lang: "id",
+      apiKey: GEOAPIFY_API_KEY,
+    },
+    timeout: 15000,
+  });
+  const feature = data?.features?.[0];
+  const coordinates = getPlaceCoordinates(feature);
+  if (!feature || !coordinates) return null;
+  return {
+    label: feature.properties?.formatted || location,
+    ...coordinates,
+  };
+}
+
+async function searchNamedPlace(query) {
+  const { data } = await axios.get("https://api.geoapify.com/v1/geocode/search", {
+    params: {
+      text: query,
+      limit: 3,
+      lang: "id",
+      apiKey: GEOAPIFY_API_KEY,
+    },
+    timeout: 15000,
+  });
+  return (data?.features || []).map(normalizePlaceFeature).filter(Boolean);
+}
+
+async function searchPlaces(searchTerm, location) {
+  if (!GEOAPIFY_API_KEY) return { error: "missing_key", places: [] };
+
+  try {
+    if (!location) {
+      const places = await searchNamedPlace(searchTerm);
+      return { mode: "name", places, searchedLocation: null };
+    }
+
+    const center = await geocodeLocation(location);
+    if (!center) return { error: "location_not_found", places: [] };
+
+    const category = getPlaceCategory(searchTerm);
+    if (!category) {
+      const places = await searchNamedPlace(`${searchTerm}, ${location}`);
+      return { mode: "name", places, searchedLocation: center.label };
+    }
+
+    const { data } = await axios.get("https://api.geoapify.com/v2/places", {
+      params: {
+        categories: category,
+        filter: `circle:${center.longitude},${center.latitude},7000`,
+        bias: `proximity:${center.longitude},${center.latitude}`,
+        limit: 3,
+        lang: "id",
+        apiKey: GEOAPIFY_API_KEY,
+      },
+      timeout: 15000,
+    });
+    const places = (data?.features || []).map(normalizePlaceFeature).filter(Boolean);
+    return { mode: "category", places, searchedLocation: center.label };
+  } catch (error) {
+    const status = error.response?.status || "-";
+    console.warn(`Geoapify error (${status}):`, error.message);
+    return { error: "request_failed", places: [] };
+  }
+}
+
+function formatPlaceSummary(place, index) {
+  const distance = place.distanceMeters !== null ? ` (${place.distanceMeters >= 1000 ? `${(place.distanceMeters / 1000).toFixed(1)} km` : `${place.distanceMeters} m`})` : "";
+  return `${index + 1}. ${place.name}${distance}\n${place.address}`;
+}
+
 function getCurrentDateTime() {
   try {
     return new Intl.DateTimeFormat("id-ID", {
@@ -793,6 +943,73 @@ async function handleMessage(sock, msg) {
     }
 
     const profile = onboarding.profile;
+    const placeCommand = parsePlaceCommand(text);
+    if (placeCommand) {
+      if (placeCommand.error === "empty") {
+        await sock.sendMessage(
+          jid,
+          { text: `Nah, ${getProfileGreeting(profile)}, tulis jenis atau nama tempatnya ya.\nContoh: ${PREFIX}tempat kafe di Solo` },
+          { quoted: msg }
+        );
+        return;
+      }
+
+      await sock.sendPresenceUpdate("composing", jid).catch(() => {});
+      const placeSearch = await searchPlaces(placeCommand.searchTerm, placeCommand.location);
+      if (placeSearch.error === "missing_key") {
+        await sock.sendMessage(
+          jid,
+          { text: "Fitur pencarian tempat belum aktif karena GEOAPIFY_API_KEY belum tersimpan di Railway. Hubungi admin ya." },
+          { quoted: msg }
+        );
+        return;
+      }
+      if (placeSearch.error === "location_not_found") {
+        await sock.sendMessage(
+          jid,
+          { text: `Maaf, ${getProfileGreeting(profile)}, lokasi “${placeCommand.location}” belum ketemu. Coba pakai nama kota atau area yang lebih jelas ya. 📍` },
+          { quoted: msg }
+        );
+        return;
+      }
+      if (placeSearch.error === "request_failed") {
+        await sock.sendMessage(
+          jid,
+          { text: "Maaf, layanan pencarian tempat sedang bermasalah. Coba lagi sebentar ya. 📍" },
+          { quoted: msg }
+        );
+        return;
+      }
+      if (!placeSearch.places.length) {
+        await sock.sendMessage(
+          jid,
+          { text: `Maaf, ${getProfileGreeting(profile)}, belum ada tempat yang cocok. Coba ganti jenis tempat atau lokasi yang lebih spesifik ya. 📍` },
+          { quoted: msg }
+        );
+        return;
+      }
+
+      const placeText = placeSearch.places.map(formatPlaceSummary).join("\n\n");
+      const intro = `${getProfileGreeting(profile)}, ini ${placeSearch.places.length} hasil tempat yang Pak Burhan temukan${placeSearch.searchedLocation ? ` di sekitar ${placeSearch.searchedLocation}` : ""}. Saya kirim lokasi yang bisa diketuk di WhatsApp ya. 📍\n\n${placeText}`;
+      await sock.sendMessage(jid, { text: intro }, { quoted: msg });
+      for (const place of placeSearch.places) {
+        await sock.sendMessage(
+          jid,
+          {
+            location: {
+              degreesLatitude: place.latitude,
+              degreesLongitude: place.longitude,
+              name: place.name,
+              address: place.address,
+            },
+          },
+          { quoted: msg }
+        );
+      }
+      saveTurn(conversationId, text, `Pencarian tempat:\n${placeText}`);
+      return;
+    }
+
     const now = Date.now();
     if (cooldown.has(conversationId) && now - cooldown.get(conversationId) < COOLDOWN_MS) {
       return;
@@ -846,6 +1063,11 @@ async function startBot() {
     console.warn("GROQ_API_KEYS masih kosong!");
   } else {
     console.log(`Groq key aktif: 1 dari ${GROQ_API_KEYS.length} key tersedia.`);
+  }
+  if (!GEOAPIFY_API_KEY) {
+    console.warn("GEOAPIFY_API_KEY masih kosong; fitur !tempat akan memberi pesan konfigurasi.");
+  } else {
+    console.log("Geoapify siap untuk fitur !tempat.");
   }
   await refreshBotSettings(true);
   if (!BOT_SETTINGS.private_allowed_lid) {
@@ -941,9 +1163,18 @@ async function startBot() {
   });
 }
 
-console.log("Memulai Pak Burhan Bot...");
-console.log("Auth method:", AUTH_METHOD);
-startBot().catch((e) => {
-  console.error("Fatal:", e);
-  process.exit(1);
-});
+module.exports = {
+  parsePlaceCommand,
+  getPlaceCategory,
+  normalizePlaceFeature,
+  formatPlaceSummary,
+};
+
+if (require.main === module) {
+  console.log("Memulai Pak Burhan Bot...");
+  console.log("Auth method:", AUTH_METHOD);
+  startBot().catch((e) => {
+    console.error("Fatal:", e);
+    process.exit(1);
+  });
+}

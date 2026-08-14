@@ -40,4 +40,4 @@ Setiap item dalam `commands` memakai format berikut:
 
 Setelah perubahan disimpan, kirim `!help` ke bot untuk melihat daftar terbaru. Untuk perubahan kode yang benar-benar menambah perilaku baru, daftar `commands` pada Supabase dan katalog perintah di kode harus diperbarui bersamaan.
 
-> Jangan menyimpan `GROQ_API_KEYS`, `GROQ_API_KEY`, atau key rahasia lain di tabel `bot_settings`. Simpan key rahasia tetap sebagai Railway Variable.
+> Jangan menyimpan `GROQ_API_KEYS`, `GROQ_API_KEY`, `GEOAPIFY_API_KEY`, atau key rahasia lain di tabel `bot_settings`. Simpan key rahasia tetap sebagai Railway Variable. Perintah inti baru seperti `!tempat` otomatis tetap muncul pada `!help` setelah kode bot diperbarui; untuk instalasi baru, entri tersebut sudah ada di `bot_settings.sql`.

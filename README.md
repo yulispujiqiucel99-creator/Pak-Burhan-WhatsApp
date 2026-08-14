@@ -1,10 +1,10 @@
 # Pak Burhan WhatsApp Bot
 
-Bot WhatsApp persona **Pak Burhan** sebagai wali kelas 7D. Proyek ini menggunakan **Node.js, Baileys, Groq API, dan Tavily opsional**.
+Bot WhatsApp persona **Pak Burhan** sebagai wali kelas 7D. Proyek ini menggunakan **Node.js, Baileys, Groq API**, serta Tavily dan Geoapify sebagai integrasi opsional.
 
 ## Fitur
 
-Bot mendukung login melalui **QR Code** atau **Pairing Code**, percakapan AI dengan gaya Pak Burhan, memori percakapan, moderasi kata kasar, perintah `!help`, `!menu`, dan `!cari`, serta pencarian internet opsional melalui Tavily. Pada grup, bot hanya menjawab saat akun bot benar-benar di-mention dengan format **`@bot pertanyaan`**; pada chat pribadi, bot membalas semua pesan. Konfigurasi proyek dirancang untuk deployment Railway dengan volume persisten.
+Bot mendukung login melalui **QR Code** atau **Pairing Code**, percakapan AI dengan gaya Pak Burhan, memori percakapan, moderasi kata kasar, perintah `!help`, `!menu`, `!cari`, dan `!tempat`. Perintah `!tempat` memakai Geoapify untuk mencari lokasi publik lalu mengirimkan hingga tiga **pesan lokasi WhatsApp yang dapat diketuk** untuk membuka peta. Pada grup, bot hanya menjawab saat akun bot benar-benar di-mention dengan format **`@bot pertanyaan`**; pada chat pribadi, bot hanya membalas LID yang diizinkan. Konfigurasi proyek dirancang untuk deployment Railway dengan volume persisten.
 
 ## Setup Lokal
 
@@ -31,6 +31,7 @@ Isi `GROQ_API_KEYS` pada `.env` sebelum menjalankan bot. API key dibuat dari [Gr
 | `PRIVATE_ALLOWED_LID` | Fallback LID privat jika Supabase belum aktif; setelah aktif, edit `private_allowed_lid` di Supabase. |
 | `BOT_TIMEZONE` | Fallback zona waktu; setelah Supabase aktif, edit `timezone` di Supabase. |
 | `TAVILY_API_KEY` | Opsional; dipakai untuk fitur pencarian internet. |
+| `GEOAPIFY_API_KEY` | Opsional; dipakai oleh `!tempat`. Buat key gratis di [Geoapify MyProjects](https://myprojects.geoapify.com/), lalu simpan hanya di Railway Variables. |
 | `PREFIX` | Awalan perintah bot; default `!`. |
 
 ## Pengaturan yang Dapat Diedit
@@ -42,6 +43,19 @@ Pengaturan seperti nama bot, zona waktu, LID privat, model Groq, batas riwayat, 
 Hubungkan repository ini ke Railway, lalu isi seluruh variabel lingkungan yang diperlukan. Untuk penggunaan normal setelah migrasi, tambahkan `SUPABASE_URL` dan `SUPABASE_SERVICE_ROLE_KEY` satu kali; pengaturan seperti LID privat dan zona waktu selanjutnya diedit dari Supabase. Tambahkan **Volume** dengan titik mount `/app` agar folder `auth_info` dan `data` tetap tersimpan setelah deployment atau restart. Jalankan bot dengan perintah `node index.js`, atau gunakan Procfile worker yang tersedia.
 
 Setelah deployment, buka menu **Logs** Railway. Jika `AUTH_METHOD=qr`, log akan menampilkan tautan QR. Buka tautan tersebut, lalu pindai QR melalui WhatsApp pada menu **Perangkat Tertaut**. Jika menggunakan pairing, atur `BOT_NUMBER` dan masukkan kode pairing yang muncul di log. Di grup, gunakan format seperti **`@Pak Burhan jadwal ulangan kapan?`**; mention tanpa pertanyaan akan dibalas dengan contoh format yang benar. Pada interaksi pertama, bot akan meminta **nama** dan **gender**; pertanyaan AI baru diproses setelah kedua data tersebut diberikan agar panggilannya tidak keliru. Jika nama atau gender pernah tersimpan salah, kirim **`!profil ulang`** agar bot menghapus profil dan meminta data kembali.
+
+## Mencari Tempat dan Mengirim Lokasi
+
+Tambahkan `GEOAPIFY_API_KEY` di **Railway → Variables**, lalu gunakan perintah berikut setelah profil pengguna lengkap:
+
+```text
+!tempat bioskop di Solo
+!tempat kafe di Solo Square
+!tempat rumah sakit di Surakarta
+!tempat Solo Square
+```
+
+Bot akan mengirim rangkuman hasil serta hingga tiga pesan lokasi interaktif. Ketuk pesan lokasi tersebut di WhatsApp untuk membukanya di aplikasi peta. Hasil bersumber dari data Geoapify/OpenStreetMap dan dapat berubah; selalu konfirmasi detail operasional langsung kepada tempat terkait.
 
 ## Login Ulang
 

@@ -26,6 +26,7 @@ values (
       jsonb_build_object('command', 'chat biasa', 'description', 'Kirim pertanyaan setelah profil nama dan gender lengkap.'),
       jsonb_build_object('command', '!help / !menu', 'description', 'Menampilkan daftar perintah terbaru.'),
       jsonb_build_object('command', '!cari [pertanyaan]', 'description', 'Mencari informasi di internet sebelum menjawab.'),
+      jsonb_build_object('command', '!tempat [jenis/nama] di [lokasi]', 'description', 'Mencari tempat dan mengirim lokasi yang dapat dibuka di WhatsApp. Contoh: !tempat kafe di Solo.'),
       jsonb_build_object('command', '!profil ulang', 'description', 'Menghapus nama, gender, dan riwayat chat Anda untuk diisi ulang.'),
       jsonb_build_object('command', 'Tag di grup', 'description', 'Tag bot lalu tulis pertanyaan; bot diam pada @semua atau @everyone.')
     )
