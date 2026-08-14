@@ -158,7 +158,8 @@ const DEFAULT_COMMANDS = [
   { command: `${PREFIX}tempat [jenis/nama] di [lokasi]`, description: "Mencari satu tempat dan mengirim satu lokasi yang dapat dibuka di WhatsApp. Contoh: !tempat kafe di Solo." },
   { command: `${PREFIX}gambar [pertanyaan]`, description: "Kirim foto dengan caption !gambar untuk dianalisis. Contoh: !gambar tolong jelaskan soal ini." },
   { command: `${PREFIX}jadwal [hari]`, description: "Menampilkan pelajaran, piket kelas, dan piket MBG VII D. Contoh: !jadwal senin." },
-  { command: `${PREFIX}jadwal aktifkan`, description: "Khusus admin di grup kelas: mengaktifkan kirim jadwal otomatis pukul 17.00 dan 20.00 WIB." },
+  { command: `${PREFIX}aktifkan jadwal [tautan grup]`, description: "Khusus DM admin: mengaktifkan kirim jadwal otomatis pukul 17.00 dan 20.00 WIB tanpa menulis perintah di grup." },
+  { command: `${PREFIX}nonaktifkan jadwal`, description: "Khusus DM admin: menghentikan pengiriman jadwal otomatis." },
   { command: `${PREFIX}sisa`, description: "Menampilkan sisa kuota pertanyaan Anda dan waktu resetnya." },
   { command: `${PREFIX}status`, description: "Khusus DM admin: menampilkan status koneksi, layanan, kuota, dan jadwal bot." },
   { command: `${PREFIX}profil ulang / ${PREFIX}reset profil`, description: "Menghapus nama, gender, dan riwayat chat Anda untuk diisi ulang." },
@@ -1346,6 +1347,21 @@ function parseNaturalScheduleRequest(text, date = new Date()) {
   return null;
 }
 
+function extractWhatsAppGroupInviteCode(value) {
+  const text = String(value || "").trim();
+  const match = text.match(/chat\.whatsapp\.com\/([A-Za-z0-9_-]{10,})/i);
+  return match?.[1] || "";
+}
+
+function parseScheduleActivationCommand(text) {
+  const match = String(text || "")
+    .trim()
+    .match(new RegExp(`^${escapeRegExp(PREFIX)}(?:aktifkan\\s+jadwal|jadwal\\s+aktifkan)(?:\\s+(.+))?$`, "i"));
+  if (!match) return null;
+  const inviteCode = extractWhatsAppGroupInviteCode(match[1]);
+  return inviteCode ? { inviteCode } : { error: "missing_link" };
+}
+
 function isClassScheduleDeliveryTime(date = new Date()) {
   const { hour, minute } = getZonedClockParts(date);
   return CLASS_SCHEDULE_DELIVERY_MINUTES.has(hour * 60 + minute);
@@ -1537,25 +1553,50 @@ async function handleMessage(sock, msg) {
       return;
     }
 
-    if (lower === `${PREFIX}jadwal aktifkan`) {
-      if (!isGroup || senderLid !== BOT_SETTINGS.private_allowed_lid) {
-        await sock.sendMessage(jid, { text: "Perintah ini hanya dapat dipakai admin melalui grup kelas yang ingin diaktifkan." }, { quoted: msg });
+    const scheduleActivation = parseScheduleActivationCommand(text);
+    if (scheduleActivation) {
+      if (isGroup || senderLid !== BOT_SETTINGS.private_allowed_lid) {
+        await sock.sendMessage(jid, { text: "Perintah ini hanya dapat dipakai admin melalui DM." }, { quoted: msg });
         return;
       }
-      BOT_STATE.classScheduleGroupJid = jid;
-      BOT_STATE.lastClassScheduleDeliveryKey = "";
-      saveBotState();
-      await sock.sendMessage(
-        jid,
-        { text: "Jadwal otomatis VII D sudah aktif di grup ini. Bot akan mengirim satu pesan jadwal harian pukul 17.00 dan 20.00 WIB. Gunakan @bot !jadwal untuk melihat jadwal hari ini." },
-        { quoted: msg }
-      );
+      if (scheduleActivation.error === "missing_link") {
+        await sock.sendMessage(
+          jid,
+          { text: `Kirim ${PREFIX}aktifkan jadwal lalu tempel tautan undangan grup kelasnya ya. Contoh:\n${PREFIX}aktifkan jadwal https://chat.whatsapp.com/xxxxxxxx` },
+          { quoted: msg }
+        );
+        return;
+      }
+
+      try {
+        const inviteInfo = await sock.groupGetInviteInfo(scheduleActivation.inviteCode);
+        const groupJid = inviteInfo?.id;
+        if (!groupJid || !isJidGroup(groupJid)) {
+          throw new Error("JID grup dari tautan tidak valid");
+        }
+        await sock.groupMetadata(groupJid);
+        BOT_STATE.classScheduleGroupJid = groupJid;
+        BOT_STATE.lastClassScheduleDeliveryKey = "";
+        saveBotState();
+        await sock.sendMessage(
+          jid,
+          { text: `Jadwal otomatis VII D sudah aktif untuk grup *${inviteInfo.subject || "kelas"}*. Bot akan mengirim jadwal pukul 17.00 dan 20.00 WIB tanpa perlu mengirim perintah di grup.\n\nUntuk mematikan, kirim ${PREFIX}nonaktifkan jadwal di DM ini.` },
+          { quoted: msg }
+        );
+      } catch (error) {
+        console.warn("Aktivasi jadwal dari DM gagal:", error.message);
+        await sock.sendMessage(
+          jid,
+          { text: "Maaf, tautan grup tidak bisa dipakai atau akun bot belum menjadi anggota grup tersebut. Tambahkan akun bot ke grup dulu, lalu kirim ulang perintah beserta tautannya ya." },
+          { quoted: msg }
+        );
+      }
       return;
     }
 
-    if (lower === `${PREFIX}jadwal nonaktifkan`) {
-      if (senderLid !== BOT_SETTINGS.private_allowed_lid) {
-        await sock.sendMessage(jid, { text: "Perintah ini khusus admin." }, { quoted: msg });
+    if (lower === `${PREFIX}nonaktifkan jadwal` || lower === `${PREFIX}jadwal nonaktifkan`) {
+      if (isGroup || senderLid !== BOT_SETTINGS.private_allowed_lid) {
+        await sock.sendMessage(jid, { text: "Perintah ini hanya dapat dipakai admin melalui DM." }, { quoted: msg });
         return;
       }
       BOT_STATE.classScheduleGroupJid = "";
@@ -1939,6 +1980,8 @@ module.exports = {
   parseClassScheduleDay,
   addCalendarDays,
   getUpcomingScheduleDate,
+  extractWhatsAppGroupInviteCode,
+  parseScheduleActivationCommand,
   parseNaturalScheduleRequest,
   formatClassScheduleMessage,
   formatClassScheduleDate,

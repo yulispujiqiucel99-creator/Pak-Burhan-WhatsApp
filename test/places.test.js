@@ -22,6 +22,8 @@ const {
   getClassScheduleDayKey,
   parseClassScheduleDay,
   getUpcomingScheduleDate,
+  extractWhatsAppGroupInviteCode,
+  parseScheduleActivationCommand,
   parseNaturalScheduleRequest,
   formatClassScheduleMessage,
   formatClassScheduleDate,
@@ -29,6 +31,15 @@ const {
   normalizePlaceFeature,
   formatPlaceSummary,
 } = require("../index");
+
+test("membaca perintah aktivasi jadwal dari DM dan tautan grup", () => {
+  const link = "https://chat.whatsapp.com/Kp4ULXH1ABh3OS2niLCe8P?s=sh";
+  assert.equal(extractWhatsAppGroupInviteCode(link), "Kp4ULXH1ABh3OS2niLCe8P");
+  assert.deepEqual(parseScheduleActivationCommand(`!aktifkan jadwal ${link}`), { inviteCode: "Kp4ULXH1ABh3OS2niLCe8P" });
+  assert.deepEqual(parseScheduleActivationCommand(`!jadwal aktifkan ${link}`), { inviteCode: "Kp4ULXH1ABh3OS2niLCe8P" });
+  assert.deepEqual(parseScheduleActivationCommand("!aktifkan jadwal"), { error: "missing_link" });
+  assert.equal(parseScheduleActivationCommand("!jadwal senin"), null);
+});
 
 test("membuang reasoning internal dari hasil analisis gambar", () => {
   const withThink = "<think>Langkah internal yang tidak boleh tampil.</think>\n\nHalo Mas, jawaban akhirnya sudah benar. 📚";
