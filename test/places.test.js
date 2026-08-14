@@ -5,6 +5,8 @@ const {
   getCommandIdentity,
   mergeCommands,
   sanitizeVisionReply,
+  isRude,
+  normalizeForToxic,
   formatQueueReply,
   reserveGroupRequest,
   parseImageCommand,
@@ -33,6 +35,12 @@ const {
   normalizePlaceFeature,
   formatPlaceSummary,
 } = require("../index");
+
+test("tidak salah menandai pertanyaan sopan tentang Boyolali dan susu sebagai kasar", () => {
+  assert.equal(isRude("Pak saya mau tanya kenapa Boyolali dijuluki kota susu?"), false);
+  assert.equal(normalizeForToxic("kota susu"), "kota susu");
+  assert.equal(isRude("dasar asu"), true);
+});
 
 test("membuat nomor antrean untuk permintaan grup yang masuk saat cooldown", async () => {
   assert.equal(formatQueueReply(2), "Permintaan sedang diproses (nomor antrean 2).");

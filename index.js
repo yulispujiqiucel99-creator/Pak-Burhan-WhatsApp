@@ -636,8 +636,8 @@ function normalizeForToxic(text) {
     .replace(/8/g, "b")
     .replace(/@/g, "a")
     .replace(/\$/g, "s");
-  t = t.replace(/[^a-z]/g, "");
-  t = t.replace(/(.)\1{2,}/g, "$1$1");
+  t = t.replace(/[^a-z]+/g, " ").trim();
+  t = t.replace(/(.)\1+/g, "$1");
   return t;
 }
 
@@ -648,12 +648,8 @@ function isRude(text) {
     const re = new RegExp("\\b" + w + "\\b", "i");
     if (re.test(lowered)) return true;
   }
-  const norm = normalizeForToxic(text);
-  for (const w of BAD_WORDS) {
-    if (norm.includes(w)) return true;
-    if (w.length >= 4 && norm.includes(w.slice(0, 4))) return true;
-  }
-  return false;
+  const normalizedWords = normalizeForToxic(text).split(/\s+/).filter(Boolean);
+  return BAD_WORDS.some((word) => normalizedWords.includes(word));
 }
 
 const LOW_VALUE_MESSAGES = new Set([
@@ -2025,6 +2021,8 @@ module.exports = {
   validateVisionImage,
   parsePlaceCommand,
   getPlaceCategory,
+  isRude,
+  normalizeForToxic,
   isLowValueMessage,
   buildLowValueReply,
   consumeQuestionQuotaForStore,
