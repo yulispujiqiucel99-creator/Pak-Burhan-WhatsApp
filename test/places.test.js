@@ -27,6 +27,7 @@ const {
   parseClassScheduleDay,
   getUpcomingScheduleDate,
   extractWhatsAppGroupInviteCode,
+  getQuotedMessageId,
   parseScheduleActivationCommand,
   parseNaturalScheduleRequest,
   formatClassScheduleMessage,
@@ -55,6 +56,19 @@ test("membuat nomor antrean untuk permintaan grup yang masuk saat cooldown", asy
   assert.equal(next.position, 1);
   assert.equal(next.shouldNotify, true);
   next.release();
+});
+
+test("mendeteksi reply langsung pada pesan gagal jadwal", () => {
+  const reply = {
+    message: {
+      extendedTextMessage: {
+        contextInfo: { stanzaId: "activation-failure-1" },
+      },
+    },
+  };
+  const ordinaryMessage = { message: { conversation: "bahas topik lain" } };
+  assert.equal(getQuotedMessageId(reply), "activation-failure-1");
+  assert.equal(getQuotedMessageId(ordinaryMessage), "");
 });
 
 test("membaca perintah aktivasi jadwal dari DM dan tautan grup", () => {

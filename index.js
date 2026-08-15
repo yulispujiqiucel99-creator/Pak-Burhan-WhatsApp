@@ -63,6 +63,8 @@ const GROUP_REST_MESSAGE = "akhirnya tugas saya selesai wah udh larut malam saya
 const CLASS_SCHEDULE_DELIVERY_MINUTES = new Set([17 * 60, 20 * 60]);
 const CLASS_UNIFORM_TEXT = "memakai seragam sekolah lama";
 const CLASS_SCHEDULE_FOOTER = "*JIKA TERDAPAT KESALAHAN PADA JADWAL HUBUNGIN NOMOR DARURAT*🗿😅*";
+const DEFAULT_CLASS_SCHEDULE_INVITE_LINK = "https://chat.whatsapp.com/Kp4ULXH1ABh3OS2niLCe8P?s=sh&p=a&ilr=1";
+const DEFAULT_CLASS_SCHEDULE_INVITE_CODE = "Kp4ULXH1ABh3OS2niLCe8P";
 const CLASS_SCHEDULE_AUDIO_DIR = path.join(__dirname, "assets", "schedule-audio");
 const CLASS_SCHEDULE_AUDIO_FILES = Object.fromEntries(
   ["senin", "selasa", "rabu", "kamis", "jumat"].map((dayKey) => [
@@ -321,7 +323,12 @@ function buildHelpText() {
 let MEMORY = {};
 let PROFILES = {};
 let QUESTION_USAGE = {};
-let BOT_STATE = { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "" };
+let BOT_STATE = {
+  lastGroupRestDate: "",
+  classScheduleGroupJid: "",
+  lastClassScheduleDeliveryKey: "",
+  scheduleActivationFailureMessageId: "",
+};
 let groupRestTimer = null;
 let classScheduleTimer = null;
 let memoryDirty = false;
@@ -365,10 +372,12 @@ function loadBotState() {
   try {
     if (fs.existsSync(BOT_STATE_FILE)) {
       const parsed = JSON.parse(fs.readFileSync(BOT_STATE_FILE, "utf8"));
-      BOT_STATE = parsed && typeof parsed === "object" ? parsed : { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "" };
+      BOT_STATE = parsed && typeof parsed === "object"
+        ? { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "", scheduleActivationFailureMessageId: "", ...parsed }
+        : { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "", scheduleActivationFailureMessageId: "" };
     }
   } catch {
-    BOT_STATE = { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "" };
+    BOT_STATE = { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "", scheduleActivationFailureMessageId: "" };
   }
 }
 
@@ -1477,6 +1486,83 @@ function parseScheduleActivationCommand(text) {
   return inviteCode ? { inviteCode } : { error: "missing_link" };
 }
 
+function getAdminDmJid() {
+  const lid = String(BOT_SETTINGS.private_allowed_lid || "").replace(/\D/g, "");
+  return lid ? `${lid}@lid` : "";
+}
+
+function getQuotedMessageId(msg) {
+  const message = msg?.message || {};
+  const contextInfo =
+    message.extendedTextMessage?.contextInfo ||
+    message.imageMessage?.contextInfo ||
+    message.videoMessage?.contextInfo ||
+    message.documentMessage?.contextInfo ||
+    null;
+  return contextInfo?.stanzaId || "";
+}
+
+async function resolveScheduleGroupFromInvite(sock, inviteCode) {
+  const inviteInfo = await sock.groupGetInviteInfo(inviteCode);
+  const groupJid = inviteInfo?.id;
+  if (!groupJid || !isJidGroup(groupJid)) {
+    throw new Error("JID grup dari tautan tidak valid");
+  }
+  await sock.groupMetadata(groupJid);
+  return { groupJid, subject: inviteInfo.subject || "kelas" };
+}
+
+async function activateDefaultScheduleGroup(sock) {
+  try {
+    const { groupJid, subject } = await resolveScheduleGroupFromInvite(sock, DEFAULT_CLASS_SCHEDULE_INVITE_CODE);
+    BOT_STATE.classScheduleGroupJid = groupJid;
+    BOT_STATE.lastClassScheduleDeliveryKey = "";
+    BOT_STATE.scheduleActivationFailureMessageId = "";
+    saveBotState();
+    return { ok: true, groupJid, subject };
+  } catch (error) {
+    console.warn("Aktivasi default jadwal VII D gagal:", error.message);
+    return { ok: false, error };
+  }
+}
+
+async function notifyScheduleActivation(sock, result, { retry = false } = {}) {
+  const adminJid = getAdminDmJid();
+  if (!adminJid) return null;
+  const successText = `[${result.subject || "Grup VII D"}] sudah dijadikan jadwal otomatis. Jadwal akan dikirim pukul 17.00 dan 20.00 WIB.`;
+  const failureText = "Grup VII D belum berhasil dijadikan jadwal otomatis. Balas pesan ini dengan tautan grup WhatsApp yang benar untuk mencoba ulang.";
+  const sent = await sock.sendMessage(adminJid, { text: result.ok ? successText : failureText });
+  if (!result.ok) {
+    BOT_STATE.scheduleActivationFailureMessageId = sent?.key?.id || "";
+    saveBotState();
+  }
+  console.log(`${retry ? "Percobaan ulang " : ""}aktivasi jadwal default: ${result.ok ? "berhasil" : "gagal"}.`);
+  return sent;
+}
+
+async function retryScheduleActivationFromReply(sock, msg, jid, text) {
+  if (jid !== getAdminDmJid()) return false;
+  if (!BOT_STATE.scheduleActivationFailureMessageId) return false;
+  if (getQuotedMessageId(msg) !== BOT_STATE.scheduleActivationFailureMessageId) return false;
+  const inviteCode = extractWhatsAppGroupInviteCode(text);
+  if (!inviteCode) {
+    await sock.sendMessage(jid, { text: "Balas pesan gagal tersebut dengan tautan undangan grup WhatsApp yang valid ya." }, { quoted: msg });
+    return true;
+  }
+  try {
+    const { groupJid, subject } = await resolveScheduleGroupFromInvite(sock, inviteCode);
+    BOT_STATE.classScheduleGroupJid = groupJid;
+    BOT_STATE.lastClassScheduleDeliveryKey = "";
+    BOT_STATE.scheduleActivationFailureMessageId = "";
+    saveBotState();
+    await sock.sendMessage(jid, { text: `[${subject}] sudah dijadikan jadwal otomatis. Jadwal akan dikirim pukul 17.00 dan 20.00 WIB.` }, { quoted: msg });
+  } catch (error) {
+    console.warn("Percobaan ulang aktivasi jadwal gagal:", error.message);
+    await sock.sendMessage(jid, { text: "Tautan grup masih belum bisa dipakai. Balas pesan gagal ini dengan tautan undangan yang benar ya." }, { quoted: msg });
+  }
+  return true;
+}
+
 function isClassScheduleDeliveryTime(date = new Date()) {
   const { hour, minute } = getZonedClockParts(date);
   return CLASS_SCHEDULE_DELIVERY_MINUTES.has(hour * 60 + minute);
@@ -1660,6 +1746,10 @@ async function handleMessage(sock, msg) {
         const conversationId = isGroup ? `group:${jid}:${senderId}` : `private:${senderId}`;
     const profileId = `user:${senderId}`;
     const lower = text.toLowerCase().trim();
+    if (!isGroup && senderLid === BOT_SETTINGS.private_allowed_lid) {
+      const handledScheduleRetry = await retryScheduleActivationFromReply(sock, msg, jid, text);
+      if (handledScheduleRetry) return;
+    }
     if (
       lower === `${PREFIX}help` ||
       lower === `${PREFIX}menu` ||
@@ -2041,6 +2131,8 @@ async function startBot() {
       reconnectAttempts = 0;
       console.log("✅ Bot sudah terhubung ke WhatsApp!");
       console.log("Nomor:", sock.user?.id?.split(":")[0] || "-");
+      const defaultScheduleActivation = await activateDefaultScheduleGroup(sock);
+      await notifyScheduleActivation(sock, defaultScheduleActivation);
       startGroupRestScheduler(sock);
       startClassScheduleScheduler(sock);
     }
@@ -2114,6 +2206,7 @@ module.exports = {
   addCalendarDays,
   getUpcomingScheduleDate,
   extractWhatsAppGroupInviteCode,
+  getQuotedMessageId,
   parseScheduleActivationCommand,
   parseNaturalScheduleRequest,
   formatClassScheduleMessage,
