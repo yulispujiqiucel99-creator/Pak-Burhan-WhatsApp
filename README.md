@@ -39,8 +39,7 @@ Isi `GROQ_API_KEYS` pada `.env` sebelum menjalankan bot. API key dibuat dari [Gr
 | `TAVILY_API_KEY` | Opsional; dipakai untuk fitur pencarian internet. |
 | `VIRUSTOTAL_API_KEY` | Diperlukan untuk `!ceklink` dan pembacaan link otomatis. Dipakai untuk memeriksa URL terhadap deteksi malware/phishing. Simpan hanya di Railway Variables. |
 | `JINA_API_KEY` | Opsional untuk `!ceklink`; dipakai agar Jina Reader mendapat batas akses lebih tinggi saat mengambil teks halaman. |
-| `JAMENDO_CLIENT_ID` | Diperlukan untuk `!musik`; digunakan untuk mencari musik dari katalog Jamendo. Simpan hanya di Railway Variables. |
-| `WEEKEND_AUDIO_SATURDAY_URL` / `WEEKEND_AUDIO_SUNDAY_URL` | Opsional; URL file audio langsung untuk voice note akhir pekan pukul 07.00 WIB. Musik maksimal 2 menit. |
+| `WEEKEND_AUDIO_SATURDAY_PATH` / `WEEKEND_AUDIO_SUNDAY_PATH` | Path file audio lokal di Volume Railway untuk voice note akhir pekan pukul 07.00 WIB. Musik maksimal 2 menit. |
 | `GEOAPIFY_API_KEY` | Opsional; dipakai oleh `!tempat`. Buat key gratis di [Geoapify MyProjects](https://myprojects.geoapify.com/), lalu simpan hanya di Railway Variables. |
 | `PREFIX` | Awalan perintah bot; default `!`. |
 
@@ -79,25 +78,18 @@ Hasil pemeriksaan otomatis disimpan sebagai cache sementara selama 24 jam agar U
 
 VirusTotal Public API mempunyai batas penggunaan dan aturan penggunaan produk. Untuk detailnya, lihat [dokumentasi VirusTotal Public API](https://docs.virustotal.com/reference/public-vs-premium-api). Jina Reader dapat dibaca melalui [dokumentasi resmi Jina Reader](https://jina.ai/reader/). API key tidak pernah dicetak ke chat, log, atau repository.
 
-## Mencari Musik
-
-Command `!musik [nama atau kata kunci]` mencari musik dari katalog Jamendo. Jika hanya ada satu hasil yang cocok, bot langsung mengunduhnya sementara, mengubahnya menjadi Ogg/Opus, dan mengirimkannya sebagai voice note. Jika ada beberapa hasil, bot menampilkan maksimal lima pilihan:
-
-```text
-!musik relaxing piano
-
-[1] Judul Musik A — Nama Artis
-[2] Judul Musik B — Nama Artis
-[0] BATALKAN
-
-Balas pesan ini dengan nomor seperti 1 atau 2.
-```
-
-Balasan nomor harus berupa reply terhadap pesan daftar. Audio yang melebihi **5 menit** ditolak dengan pesan `musik melebihi batas (5 menit)`. File audio hasil unduhan disimpan sementara di Volume Railway, dikirim, lalu dihapus; file tidak disimpan di GitHub. Jamendo memerlukan `JAMENDO_CLIENT_ID` dari [Jamendo Developer Portal](https://developer.jamendo.com/v3.0). Gunakan musik yang lisensinya sesuai dengan kebutuhan dan jangan mengandalkan pencarian lagu berhak cipta tanpa izin.
-
 ## Audio Akhir Pekan
 
-Jika `WEEKEND_AUDIO_SATURDAY_URL` dan `WEEKEND_AUDIO_SUNDAY_URL` diisi dengan URL file audio langsung, bot mengunduh dan mengirim voice note satu kali pada pukul **07.00 WIB** di hari yang sesuai. Musik akhir pekan dibatasi maksimal **2 menit**, dikonversi ke Ogg/Opus, lalu file sementara dihapus setelah berhasil dikirim. Status pengiriman disimpan agar restart bot tidak mengirim ulang pada tanggal yang sama.
+Fitur pencarian musik dan command `!musik` tidak digunakan lagi. Audio akhir pekan memakai dua file lokal yang disimpan di **Volume Railway**, sehingga tidak bergantung pada layanan pencarian musik dan tidak menghabiskan kredit TTS.
+
+Letakkan file berikut di Volume Railway:
+
+```text
+/app/data/weekend-audio/sabtu.mp3
+/app/data/weekend-audio/minggu.mp3
+```
+
+Bot akan mengirim file Sabtu pada pukul **07.00 WIB** hari Sabtu dan file Minggu pada pukul **07.00 WIB** hari Minggu. Setiap file dibatasi maksimal **2 menit**, dikonversi ke Ogg/Opus agar tampil sebagai voice note, lalu hanya file hasil konversi sementara yang dihapus. File sumber tetap disimpan di Volume Railway agar dapat dipakai pada akhir pekan berikutnya. Status pengiriman disimpan agar restart bot tidak mengirim ulang pada tanggal yang sama.
 
 ## Mencari Tempat dan Mengirim Lokasi
 

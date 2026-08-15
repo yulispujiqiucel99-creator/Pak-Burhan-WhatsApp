@@ -47,10 +47,12 @@ const {
   formatAutomaticLinkWarning,
   isAutoLinkScanGroup,
   classifyAutomaticLinkResults,
-  parseMusicCommand,
-  formatMusicSelection,
-  formatMusicTooLongMessage,
+  buildHelpText,
 } = require("../index");
+
+test("!help tidak lagi menampilkan command musik yang sudah dihapus", () => {
+  assert.doesNotMatch(buildHelpText(), /!musik|Jamendo/i);
+});
 
 test("tidak menganggap pending sebagai link berbahaya otomatis", () => {
   assert.equal(classifyAutomaticLinkResults([{ status: "pending" }]), "pending");
@@ -60,20 +62,6 @@ test("tidak menganggap pending sebagai link berbahaya otomatis", () => {
   assert.equal(classifyAutomaticLinkResults([{ status: "suspicious" }]), "unsafe");
   assert.equal(classifyAutomaticLinkResults([{ status: "clean" }, { status: "pending" }]), "pending");
   assert.equal(classifyAutomaticLinkResults([{ status: "clean" }, { status: "malicious" }]), "unsafe");
-});
-
-test("mem-parsing command musik dan membuat menu pilihan", () => {
-  assert.deepEqual(parseMusicCommand("!musik relaxing piano"), { query: "relaxing piano", error: "" });
-  assert.deepEqual(parseMusicCommand("!musik"), { query: "", error: "empty" });
-  assert.equal(parseMusicCommand("musik relaxing"), null);
-  const menu = formatMusicSelection([
-    { name: "Musik A", artist: "Artis A" },
-    { name: "Musik B", artist: "Artis B" },
-  ]);
-  assert.match(menu, /\[1\] Musik A — Artis A/);
-  assert.match(menu, /\[2\] Musik B — Artis B/);
-  assert.match(menu, /\[0\] BATALKAN/);
-  assert.match(formatMusicTooLongMessage(), /musik melebihi batas \(5 menit\)/);
 });
 
 test("membaca link, command ceklink, dan hasil pemeriksaan keamanan", () => {

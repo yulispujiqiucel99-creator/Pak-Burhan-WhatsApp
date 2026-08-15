@@ -4,3 +4,8 @@ auth_info/
 data/
 *.log
 .DS_Store
+
+# Audio weekend lokal (disimpan di Volume Railway, bukan Git)
+data/weekend-audio/*.mp3
+data/weekend-audio/*.ogg
+data/weekend-audio/*.opus

@@ -38,8 +38,6 @@ const DEFAULT_BOT_TIMEZONE = process.env.BOT_TIMEZONE || "Asia/Jakarta";
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
 const VIRUSTOTAL_API_KEY = (process.env.VIRUSTOTAL_API_KEY || "").trim();
 const JINA_API_KEY = (process.env.JINA_API_KEY || "").trim();
-const JAMENDO_CLIENT_ID = (process.env.JAMENDO_CLIENT_ID || "").trim();
-const JAMENDO_API_URL = "https://api.jamendo.com/v3.0/tracks/";
 const VIRUSTOTAL_BASE_URL = "https://www.virustotal.com/api/v3";
 const JINA_READER_BASE_URL = "https://r.jina.ai";
 const MAX_LINKS_PER_MESSAGE = 3;
@@ -50,9 +48,9 @@ const AUTO_LINK_CACHE_CLEAR_MINUTE = 30;
 const GEOAPIFY_API_KEY = (process.env.GEOAPIFY_API_KEY || "").trim();
 const GROQ_VISION_MODEL = (process.env.GROQ_VISION_MODEL || "qwen/qwen3.6-27b").trim();
 const MAX_VISION_IMAGE_BYTES = 20 * 1024 * 1024;
-const WEEKEND_AUDIO_URLS = {
-  sabtu: (process.env.WEEKEND_AUDIO_SATURDAY_URL || "").trim(),
-  minggu: (process.env.WEEKEND_AUDIO_SUNDAY_URL || "").trim(),
+const WEEKEND_AUDIO_PATHS = {
+  sabtu: (process.env.WEEKEND_AUDIO_SATURDAY_PATH || path.join(__dirname, "data", "weekend-audio", "sabtu.mp3")).trim(),
+  minggu: (process.env.WEEKEND_AUDIO_SUNDAY_PATH || path.join(__dirname, "data", "weekend-audio", "minggu.mp3")).trim(),
 };
 const WEEKEND_AUDIO_MAX_SECONDS = 2 * 60;
 const PREFIX = process.env.PREFIX || "!";
@@ -187,7 +185,6 @@ const DEFAULT_COMMANDS = [
   { command: `${PREFIX}help / ${PREFIX}menu`, description: "Menampilkan daftar perintah terbaru." },
   { command: `${PREFIX}cari [pertanyaan]`, description: "Mencari informasi di internet sebelum menjawab; jika berisi URL, membaca isi link tersebut." },
   { command: `${PREFIX}ceklink [URL]`, description: "Memeriksa keamanan link lalu membaca dan menjelaskan isinya. Link yang dikirim tanpa command juga dapat diproses otomatis." },
-  { command: `${PREFIX}musik [nama]`, description: "Mencari musik legal dari Jamendo, mengirimnya sebagai voice note, dan menghapus file sementara. Maksimal 5 menit." },
   { command: `${PREFIX}tempat [jenis/nama] di [lokasi]`, description: "Mencari satu tempat dan mengirim satu lokasi yang dapat dibuka di WhatsApp. Contoh: !tempat kafe di Solo." },
   { command: `${PREFIX}gambar [pertanyaan]`, description: "Kirim foto dengan caption !gambar untuk dianalisis. Contoh: !gambar tolong jelaskan soal ini." },
   { command: `${PREFIX}jadwal [hari]`, description: "Menampilkan pelajaran, piket kelas, dan piket MBG VII D. Contoh: !jadwal senin." },
@@ -356,8 +353,6 @@ let groupRestTimer = null;
 let classScheduleTimer = null;
 let autoLinkCacheTimer = null;
 const AUTO_LINK_CACHE = new Map();
-const MUSIC_SELECTION_TTL_MS = 5 * 60 * 1000;
-const PENDING_MUSIC_SELECTIONS = new Map();
 let memoryDirty = false;
 let memoryUpdateCount = 0;
 let lastMemorySave = Date.now();
@@ -981,81 +976,6 @@ async function checkUrlWithVirusTotal(url) {
     if (httpStatus === 429) return { status: "rate_limited", url };
     return { status: "error", url };
   }
-}
-
-function parseMusicCommand(text) {
-  const match = String(text || "").trim().match(new RegExp(`^${escapeRegExp(PREFIX)}musik(?:\\s+(.+))?$`, "i"));
-  if (!match) return null;
-  return { query: (match[1] || "").trim(), error: match[1] ? "" : "empty" };
-}
-
-async function searchJamendoMusic(query) {
-  if (!JAMENDO_CLIENT_ID) return { status: "missing_key", results: [] };
-  const response = await axios.get(JAMENDO_API_URL, {
-    params: {
-      client_id: JAMENDO_CLIENT_ID,
-      format: "json",
-      limit: 5,
-      namesearch: query,
-      audioformat: "mp32",
-      include: "licenses",
-    },
-    timeout: 20000,
-  });
-  const results = Array.isArray(response.data?.results) ? response.data.results : [];
-  return {
-    status: "ok",
-    results: results
-      .filter((item) => item.audio && item.name)
-      .slice(0, 5)
-      .map((item) => ({
-        id: String(item.id || ""),
-        name: String(item.name || "Musik tanpa judul"),
-        artist: String(item.artist_name || "Artis independen"),
-        duration: Number(item.duration) || 0,
-        audioUrl: item.audio,
-        licenseUrl: item.license_ccurl || "",
-      })),
-  };
-}
-
-function formatMusicSelection(results) {
-  const lines = results.map((item, index) => `[${index + 1}] ${item.name} — ${item.artist}`);
-  return `🎵 Pak Burhan menemukan beberapa musik:
-${lines.join("\n")}
-[0] BATALKAN
-
-Balas pesan ini dengan nomor seperti 1 atau 2 ya.`;
-}
-
-function getMusicSelectionKey(jid, senderId) {
-  return `${jid}:${senderId}`;
-}
-
-function rememberMusicSelection(jid, senderId, messageId, results) {
-  PENDING_MUSIC_SELECTIONS.set(getMusicSelectionKey(jid, senderId), {
-    messageId,
-    results,
-    createdAt: Date.now(),
-  });
-}
-
-function getMusicSelection(jid, senderId, quotedMessageId) {
-  const key = getMusicSelectionKey(jid, senderId);
-  const pending = PENDING_MUSIC_SELECTIONS.get(key);
-  if (!pending || Date.now() - pending.createdAt > MUSIC_SELECTION_TTL_MS || pending.messageId !== quotedMessageId) {
-    if (pending && Date.now() - pending.createdAt > MUSIC_SELECTION_TTL_MS) PENDING_MUSIC_SELECTIONS.delete(key);
-    return null;
-  }
-  return pending;
-}
-
-function clearMusicSelection(jid, senderId) {
-  PENDING_MUSIC_SELECTIONS.delete(getMusicSelectionKey(jid, senderId));
-}
-
-function formatMusicTooLongMessage() {
-  return "⚠️ musik melebihi batas (5 menit). Silakan pilih musik yang durasinya tidak lebih dari 5 menit ya.";
 }
 
 function getAutoLinkCacheKey(url) {
@@ -2044,23 +1964,16 @@ async function getAudioDurationSeconds(filePath) {
   return duration;
 }
 
-async function downloadAndConvertAudio(sourceUrl, filePrefix, maxSeconds) {
-  if (!/^https?:\/\//i.test(sourceUrl)) throw new Error("URL audio tidak valid");
+async function convertLocalAudio(sourcePath, filePrefix, maxSeconds) {
+  if (!sourcePath) throw new Error("path audio tidak tersedia");
+  await fs.promises.access(sourcePath, fs.constants.R_OK);
   await fs.promises.mkdir(WEEKEND_AUDIO_TEMP_DIR, { recursive: true });
-  const inputPath = path.join(WEEKEND_AUDIO_TEMP_DIR, `${filePrefix}-${Date.now()}.source`);
   const outputPath = path.join(WEEKEND_AUDIO_TEMP_DIR, `${filePrefix}-${Date.now()}.ogg`);
   try {
-    const response = await axios.get(sourceUrl, {
-      responseType: "arraybuffer",
-      timeout: 30000,
-      maxContentLength: 20 * 1024 * 1024,
-      maxBodyLength: 20 * 1024 * 1024,
-    });
-    await fs.promises.writeFile(inputPath, response.data);
-    const duration = await getAudioDurationSeconds(inputPath);
+    const duration = await getAudioDurationSeconds(sourcePath);
     if (duration > maxSeconds) throw new Error(`durasi audio ${Math.ceil(duration)} detik melebihi batas ${maxSeconds} detik`);
     await execFileAsync("ffmpeg", [
-      "-y", "-i", inputPath,
+      "-y", "-i", sourcePath,
       "-vn", "-c:a", "libopus", "-b:a", "96k", "-ac", "1", "-ar", "48000",
       outputPath,
     ], { maxBuffer: 1024 * 1024 });
@@ -2068,32 +1981,12 @@ async function downloadAndConvertAudio(sourceUrl, filePrefix, maxSeconds) {
   } catch (error) {
     await fs.promises.unlink(outputPath).catch(() => {});
     throw error;
-  } finally {
-    await fs.promises.unlink(inputPath).catch(() => {});
   }
 }
-
-async function downloadWeekendAudio(dayKey) {
-  const sourceUrl = WEEKEND_AUDIO_URLS[dayKey];
-  if (!sourceUrl) return null;
-  return downloadAndConvertAudio(sourceUrl, `weekend-${dayKey}`, WEEKEND_AUDIO_MAX_SECONDS);
-}
-
-async function sendSelectedMusic(sock, jid, selection) {
-  let audio = null;
-  try {
-    audio = await downloadAndConvertAudio(selection.audioUrl, `musik-${selection.id || Date.now()}`, 5 * 60);
-    await sock.sendMessage(jid, {
-      audio: fs.readFileSync(audio.path),
-      mimetype: "audio/ogg; codecs=opus",
-      ptt: true,
-    });
-  } finally {
-    if (audio?.path) {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      await fs.promises.unlink(audio.path).catch(() => {});
-    }
-  }
+async function prepareWeekendAudio(dayKey) {
+  const sourcePath = WEEKEND_AUDIO_PATHS[dayKey];
+  if (!sourcePath) return null;
+  return convertLocalAudio(sourcePath, `weekend-${dayKey}`, WEEKEND_AUDIO_MAX_SECONDS);
 }
 
 async function sendWeekendAudio(sock, date = new Date()) {
@@ -2101,10 +1994,10 @@ async function sendWeekendAudio(sock, date = new Date()) {
   const { dateKey, hour, minute } = getZonedClockParts(date);
   if (hour !== 7 || minute !== 0) return false;
   const dayKey = getClassScheduleDayKey(date);
-  if (!WEEKEND_AUDIO_URLS[dayKey]) return false;
+  if (!WEEKEND_AUDIO_PATHS[dayKey]) return false;
   const deliveryKey = `${dateKey}-${dayKey}`;
   if (BOT_STATE.lastWeekendAudioDeliveryKey === deliveryKey) return false;
-  const audio = await downloadWeekendAudio(dayKey);
+  const audio = await prepareWeekendAudio(dayKey);
   if (!audio) return false;
   try {
     await sock.sendMessage(BOT_STATE.classScheduleGroupJid, {
@@ -2257,11 +2150,10 @@ async function handleMessage(sock, msg) {
         return;
       }
       if (await handleAutomaticLinks(sock, msg, jid, text)) return;
-      const isMusicSelectionReply = /^\d+$/.test(text.trim()) && Boolean(getMusicSelection(jid, senderLid || senderNumber || "unknown", getQuotedMessageId(msg)));
       const mentions = getMentionedJids(msg);
       const botIdentities = getBotIdentityJids(sock);
       const mentionSource = getBotMentionSource(msg, sock, text);
-      if (!mentionSource && !isMusicSelectionReply) {
+      if (!mentionSource) {
         console.log("[G] mention tidak cocok", {
           group: jid,
           mentions,
@@ -2346,63 +2238,6 @@ async function handleMessage(sock, msg) {
       return;
     }
 
-    const musicSelection = getMusicSelection(jid, senderId, getQuotedMessageId(msg));
-    if (musicSelection && /^\d+$/.test(text.trim())) {
-      const choice = Number.parseInt(text.trim(), 10);
-      if (choice === 0) {
-        clearMusicSelection(jid, senderId);
-        await sock.sendMessage(jid, { text: "Oke, pencarian musik dibatalkan ya." }, { quoted: msg });
-        return;
-      }
-      const selected = musicSelection.results[choice - 1];
-      if (!selected) {
-        await sock.sendMessage(jid, { text: `Pilihan tidak tersedia. Balas dengan nomor 1 sampai ${musicSelection.results.length}, atau 0 untuk membatalkan.` }, { quoted: msg });
-        return;
-      }
-      clearMusicSelection(jid, senderId);
-      try {
-        await sendSelectedMusic(sock, jid, selected);
-      } catch (error) {
-        console.warn("Pengiriman musik pilihan gagal:", error.message);
-        const reply = /melebihi batas/.test(error.message) ? formatMusicTooLongMessage() : "Maaf, musiknya belum bisa dikirim. Coba pilih musik lain ya.";
-        await sock.sendMessage(jid, { text: reply }, { quoted: msg });
-      }
-      return;
-    }
-    const musicCommand = parseMusicCommand(text);
-    if (musicCommand) {
-      if (musicCommand.error === "empty") {
-        await sock.sendMessage(jid, { text: `Tulis nama musik setelah ${PREFIX}musik. Contoh: ${PREFIX}musik relaxing piano` }, { quoted: msg });
-        return;
-      }
-      if (!JAMENDO_CLIENT_ID) {
-        await sock.sendMessage(jid, { text: "Fitur pencarian musik belum aktif karena JAMENDO_CLIENT_ID belum diatur di Railway." }, { quoted: msg });
-        return;
-      }
-      try {
-        const search = await searchJamendoMusic(musicCommand.query);
-        if (!search.results.length) {
-          await sock.sendMessage(jid, { text: "Pak Burhan belum menemukan musik yang cocok. Coba nama atau kata kunci lain ya." }, { quoted: msg });
-          return;
-        }
-        if (search.results.length === 1) {
-          try {
-            await sendSelectedMusic(sock, jid, search.results[0]);
-          } catch (error) {
-            console.warn("Pengiriman musik tunggal gagal:", error.message);
-            const reply = /melebihi batas/.test(error.message) ? formatMusicTooLongMessage() : "Maaf, musiknya belum bisa dikirim. Coba cari musik lain ya.";
-            await sock.sendMessage(jid, { text: reply }, { quoted: msg });
-          }
-          return;
-        }
-        const menu = await sock.sendMessage(jid, { text: formatMusicSelection(search.results) }, { quoted: msg });
-        rememberMusicSelection(jid, senderId, menu?.key?.id || "", search.results);
-      } catch (error) {
-        console.warn("Pencarian musik gagal:", error.message);
-        await sock.sendMessage(jid, { text: "Maaf, pencarian musik sedang bermasalah. Coba lagi sebentar ya." }, { quoted: msg });
-      }
-      return;
-    }
     if (lower === `${PREFIX}nonaktifkan jadwal` || lower === `${PREFIX}jadwal nonaktifkan`) {
       if (isGroup || senderLid !== BOT_SETTINGS.private_allowed_lid) {
         await sock.sendMessage(jid, { text: "Perintah ini hanya dapat dipakai admin melalui DM." }, { quoted: msg });
@@ -2887,11 +2722,8 @@ module.exports = {
   classifyAutomaticLinkResults,
   isAutoLinkScanGroup,
   getAudioDurationSeconds,
-  parseMusicCommand,
-  formatMusicSelection,
-  getMusicSelection,
-  formatMusicTooLongMessage,
   getUpcomingScheduleDate,
+  buildHelpText,
 };
 
 if (require.main === module) {
