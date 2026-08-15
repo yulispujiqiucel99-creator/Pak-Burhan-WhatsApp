@@ -46,10 +46,21 @@ const {
   getAutoLinkCacheKey,
   formatAutomaticLinkWarning,
   isAutoLinkScanGroup,
+  classifyAutomaticLinkResults,
   parseMusicCommand,
   formatMusicSelection,
   formatMusicTooLongMessage,
 } = require("../index");
+
+test("tidak menganggap pending sebagai link berbahaya otomatis", () => {
+  assert.equal(classifyAutomaticLinkResults([{ status: "pending" }]), "pending");
+  assert.equal(classifyAutomaticLinkResults([{ status: "error" }]), "pending");
+  assert.equal(classifyAutomaticLinkResults([{ status: "clean" }]), "clean");
+  assert.equal(classifyAutomaticLinkResults([{ status: "malicious" }]), "unsafe");
+  assert.equal(classifyAutomaticLinkResults([{ status: "suspicious" }]), "unsafe");
+  assert.equal(classifyAutomaticLinkResults([{ status: "clean" }, { status: "pending" }]), "pending");
+  assert.equal(classifyAutomaticLinkResults([{ status: "clean" }, { status: "malicious" }]), "unsafe");
+});
 
 test("mem-parsing command musik dan membuat menu pilihan", () => {
   assert.deepEqual(parseMusicCommand("!musik relaxing piano"), { query: "relaxing piano", error: "" });

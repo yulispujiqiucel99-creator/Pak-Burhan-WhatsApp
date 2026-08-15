@@ -1136,6 +1136,14 @@ function formatAutomaticLinkWarning(results, deleted = true) {
   return "⚠️ Link belum dapat dinyatakan aman karena pemeriksaan VirusTotal mengalami kendala. Pesan tidak dihapus; coba periksa dengan !ceklink jika diperlukan.";
 }
 
+function classifyAutomaticLinkResults(results) {
+  const pendingOrFailed = results.some((result) => !["clean", "malicious", "suspicious"].includes(result.status));
+  const unsafe = results.some((result) => result.status === "malicious" || result.status === "suspicious");
+  if (unsafe) return "unsafe";
+  if (pendingOrFailed) return "pending";
+  return "clean";
+}
+
 async function handleAutomaticLinks(sock, msg, jid, text) {
   if (!isJidGroup(jid) || !isAutoLinkScanGroup(jid) || hasManualLinkCommand(text)) return false;
   const urls = extractUrls(text);
@@ -1145,15 +1153,21 @@ async function handleAutomaticLinks(sock, msg, jid, text) {
   await setMessageReaction(sock, jid, msg.key, "🧐");
   const results = [];
   for (const url of urls) results.push(await checkAutomaticUrl(url));
-  const failed = results.some((result) => !["clean", "malicious", "suspicious"].includes(result.status));
-  const unsafe = results.some((result) => result.status === "malicious" || result.status === "suspicious");
-  if (!failed && !unsafe) {
+  const outcome = classifyAutomaticLinkResults(results);
+  const pendingOrFailed = outcome === "pending";
+  const unsafe = outcome === "unsafe";
+  if (!unsafe && pendingOrFailed) {
+    // Pending/error bukan bukti bahaya. Jangan kirim pesan ke grup dan jangan beri ❌.
+    // Reaksi 🧐 dibiarkan agar pemeriksaan yang belum final tidak disalahartikan sebagai aman.
+    return true;
+  }
+  if (!unsafe) {
     await setMessageReaction(sock, jid, msg.key, "✅");
     return true;
   }
   await setMessageReaction(sock, jid, msg.key, "❌");
   const warning = formatAutomaticLinkWarning(results);
-  if (!failed && unsafe) {
+  if (!pendingOrFailed && unsafe) {
     await sock.sendMessage(jid, { text: "⚠️ Link terdeteksi berisiko. Pesannya sedang dihapus demi keamanan." }, { quoted: msg });
     let deleted = false;
     try {
@@ -1164,6 +1178,8 @@ async function handleAutomaticLinks(sock, msg, jid, text) {
     }
     await sock.sendMessage(jid, { text: formatAutomaticLinkWarning(results, deleted) });
   } else {
+    // Jika ada hasil unsafe final bersama hasil pending, tetap beri peringatan,
+    // tetapi jangan mengklaim semua URL sudah selesai diperiksa.
     await sock.sendMessage(jid, { text: warning }, { quoted: msg });
   }
   return true;
@@ -2868,6 +2884,7 @@ module.exports = {
     formatLinkSafetyResult,
   getAutoLinkCacheKey,
   formatAutomaticLinkWarning,
+  classifyAutomaticLinkResults,
   isAutoLinkScanGroup,
   getAudioDurationSeconds,
   parseMusicCommand,
