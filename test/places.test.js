@@ -36,7 +36,39 @@ const {
   isClassScheduleDeliveryTime,
   normalizePlaceFeature,
   formatPlaceSummary,
+  extractUrls,
+  parseLinkCommand,
+  getLinkQuestion,
+  encodeVirusTotalUrlId,
+  getVirusTotalStats,
+  classifyVirusTotalResult,
+  formatLinkSafetyResult,
 } = require("../index");
+
+test("membaca link, command ceklink, dan hasil pemeriksaan keamanan", () => {
+  assert.deepEqual(extractUrls("Baca https://example.com/artikel). dan https://example.org"), [
+    "https://example.com/artikel",
+    "https://example.org/",
+  ]);
+  assert.deepEqual(parseLinkCommand("!ceklink https://example.com/artikel"), {
+    urls: ["https://example.com/artikel"],
+    raw: "https://example.com/artikel",
+  });
+  assert.deepEqual(parseLinkCommand("!ceklink"), { error: "empty" });
+  assert.equal(parseLinkCommand("!jadwal senin"), null);
+  assert.equal(getLinkQuestion("!ceklink apa isi https://example.com/artikel", ["https://example.com/artikel"]), "apa isi");
+  assert.equal(encodeVirusTotalUrlId("https://example.com"), "aHR0cHM6Ly9leGFtcGxlLmNvbQ");
+  assert.deepEqual(getVirusTotalStats({ last_analysis_stats: { malicious: 2, suspicious: 1, harmless: 20, undetected: 3 } }), {
+    malicious: 2,
+    suspicious: 1,
+    harmless: 20,
+    undetected: 3,
+  });
+  assert.equal(classifyVirusTotalResult({ malicious: 1, suspicious: 0 }), "malicious");
+  assert.equal(classifyVirusTotalResult({ malicious: 0, suspicious: 1 }), "suspicious");
+  assert.equal(classifyVirusTotalResult({ malicious: 0, suspicious: 0 }), "clean");
+  assert.match(formatLinkSafetyResult({ status: "malicious", stats: { malicious: 2 } }), /terdeteksi berbahaya/);
+});
 
 test("tidak salah menandai pertanyaan sopan tentang Boyolali dan susu sebagai kasar", () => {
   assert.equal(isRude("Pak saya mau tanya kenapa Boyolali dijuluki kota susu?"), false);

@@ -4,7 +4,7 @@ Bot WhatsApp persona **Pak Burhan** sebagai wali kelas 7D. Proyek ini menggunaka
 
 ## Fitur
 
-Bot mendukung login melalui **QR Code** atau **Pairing Code**, percakapan AI dengan gaya Pak Burhan, memori percakapan, moderasi kata kasar, perintah `!help`, `!menu`, `!cari`, `!tempat`, `!gambar`, dan `!jadwal`. Perintah `!tempat` memakai Geoapify untuk mencari lokasi publik lalu mengirimkan satu **pesan lokasi WhatsApp yang dapat diketuk** untuk membuka peta. Pada grup, bot hanya menjawab saat akun bot benar-benar di-mention dengan format **`@bot pertanyaan`**; pada chat pribadi, bot hanya membalas LID yang diizinkan. Konfigurasi proyek dirancang untuk deployment Railway dengan volume persisten. Pesan masuk baru otomatis ditandai sebagai sudah dibaca oleh akun bot agar tidak menumpuk sebagai notifikasi belum dibaca; fitur ini tidak membisukan suara notifikasi WhatsApp.
+Bot mendukung login melalui **QR Code** atau **Pairing Code**, percakapan AI dengan gaya Pak Burhan, memori percakapan, moderasi kata kasar, perintah `!help`, `!menu`, `!cari`, `!ceklink`, `!tempat`, `!gambar`, dan `!jadwal`. Perintah `!tempat` memakai Geoapify untuk mencari lokasi publik lalu mengirimkan satu **pesan lokasi WhatsApp yang dapat diketuk** untuk membuka peta. Pada grup, bot hanya menjawab saat akun bot benar-benar di-mention dengan format **`@bot pertanyaan`**; pada chat pribadi, bot hanya membalas LID yang diizinkan. Konfigurasi proyek dirancang untuk deployment Railway dengan volume persisten. Pesan masuk baru otomatis ditandai sebagai sudah dibaca oleh akun bot agar tidak menumpuk sebagai notifikasi belum dibaca; fitur ini tidak membisukan suara notifikasi WhatsApp.
 
 Untuk menghemat limit AI, **grup** memakai jeda pemrosesan 20 detik. Pesan berguna yang masuk saat ada permintaan grup lain diproses akan dibalas `Permintaan sedang diproses (nomor antrean X).`, lalu tetap dijawab sesuai urutan. Basa-basi sederhana seperti sapaan, pesan tes, ucapan terima kasih, dan tawa singkat tidak masuk antrean atau diteruskan ke Groq; bot langsung mengirim respons hemat-limit dengan panggilan Mas atau Mbak sesuai profil. **DM admin tidak memakai cooldown maupun antrean.**
 
@@ -37,6 +37,8 @@ Isi `GROQ_API_KEYS` pada `.env` sebelum menjalankan bot. API key dibuat dari [Gr
 | `PRIVATE_ALLOWED_LID` | LID privat yang diizinkan; dikelola dari Railway Variables dan kode. |
 | `BOT_TIMEZONE` | Zona waktu bot; default `Asia/Jakarta` dan dikelola dari Railway Variables/kode. |
 | `TAVILY_API_KEY` | Opsional; dipakai untuk fitur pencarian internet. |
+| `VIRUSTOTAL_API_KEY` | Diperlukan untuk `!ceklink` dan pembacaan link otomatis. Dipakai untuk memeriksa URL terhadap deteksi malware/phishing. Simpan hanya di Railway Variables. |
+| `JINA_API_KEY` | Opsional untuk `!ceklink`; dipakai agar Jina Reader mendapat batas akses lebih tinggi saat mengambil teks halaman. |
 | `GEOAPIFY_API_KEY` | Opsional; dipakai oleh `!tempat`. Buat key gratis di [Geoapify MyProjects](https://myprojects.geoapify.com/), lalu simpan hanya di Railway Variables. |
 | `PREFIX` | Awalan perintah bot; default `!`. |
 
@@ -49,6 +51,29 @@ Supabase sekarang dipakai untuk menyimpan data kecil profil pengguna pada tabel 
 Hubungkan repository ini ke Railway, lalu isi seluruh variabel lingkungan yang diperlukan. Untuk penggunaan profil, tambahkan `SUPABASE_URL` dan `SUPABASE_SERVICE_ROLE_KEY` satu kali. Tambahkan **Volume** dengan titik mount `/app` agar folder `auth_info` dan `data` tetap tersimpan setelah deployment atau restart. Jalankan bot dengan perintah `node index.js`, atau gunakan Procfile worker yang tersedia.
 
 Setelah deployment, buka menu **Logs** Railway. Jika `AUTH_METHOD=qr`, log akan menampilkan tautan QR. Buka tautan tersebut, lalu pindai QR melalui WhatsApp pada menu **Perangkat Tertaut**. Jika menggunakan pairing, atur `BOT_NUMBER` dan masukkan kode pairing yang muncul di log. Di grup, gunakan format seperti **`@Pak Burhan jadwal ulangan kapan?`**; mention tanpa pertanyaan akan dibalas dengan contoh format yang benar. Pada interaksi pertama, bot akan meminta **nama** dan **gender**; pertanyaan AI baru diproses setelah kedua data tersebut diberikan agar panggilannya tidak keliru. Jika nama atau gender pernah tersimpan salah, kirim **`!profil ulang`** agar bot menghapus profil dan meminta data kembali.
+
+## Memeriksa dan Membaca Link
+
+Fitur link memakai dua layanan dengan tugas berbeda. **VirusTotal Public API** memeriksa apakah URL sudah terdeteksi sebagai malware atau phishing. Jika pemeriksaan tidak menunjukkan bahaya, **Jina Reader** mengambil isi halaman menjadi teks yang kemudian dirangkum oleh model Groq Llama yang sudah dipakai bot. VirusTotal harus dikonfigurasi agar bot tidak membaca link tanpa pemeriksaan keamanan; Jina Reader dapat berjalan dengan batas rendah tanpa API key, tetapi `JINA_API_KEY` disarankan untuk penggunaan yang lebih stabil.
+
+Tambahkan variabel berikut di **Railway → Variables**:
+
+```text
+VIRUSTOTAL_API_KEY=...
+JINA_API_KEY=...
+```
+
+Gunakan command manual:
+
+```text
+!ceklink https://contoh.com/artikel
+!ceklink apa isi artikel ini? https://contoh.com/artikel
+!cari https://contoh.com/artikel
+```
+
+Pesan biasa yang mengandung URL juga akan diproses otomatis setelah profil pengguna lengkap. Bot memeriksa maksimal tiga URL dalam satu pesan, menghentikan proses jika VirusTotal melaporkan URL berbahaya atau mencurigakan, lalu hanya mengirimkan teks halaman yang sudah diambil ke Groq. **Hasil “belum terdeteksi” bukan jaminan mutlak bahwa sebuah URL aman.** Jangan kirim URL yang mengandung token login, reset password, undangan privat, atau data pribadi karena URL tersebut dikirim ke layanan pihak ketiga.
+
+VirusTotal Public API mempunyai batas penggunaan dan aturan penggunaan produk. Untuk detailnya, lihat [dokumentasi VirusTotal Public API](https://docs.virustotal.com/reference/public-vs-premium-api). Jina Reader dapat dibaca melalui [dokumentasi resmi Jina Reader](https://jina.ai/reader/). API key tidak pernah dicetak ke chat, log, atau repository.
 
 ## Mencari Tempat dan Mengirim Lokasi
 
@@ -91,7 +116,7 @@ File audio tidak memuat API key dan dapat diganti dengan file baru menggunakan n
 
 Gunakan `!sisa` setelah profil lengkap untuk melihat kuota terpakai, sisa pertanyaan, dan waktu reset kuota LID Anda. Perintah ini tidak mengurangi kuota dan dapat digunakan di DM maupun grup selama bot sedang aktif.
 
-Perintah `!status` **hanya** dapat digunakan dari DM oleh LID admin yang diizinkan. Laporan ini tidak memuat API key; isinya hanya status koneksi WhatsApp, kesiapan Groq dan Geoapify, model Groq aktif, kuota admin, status jam istirahat grup, serta zona waktu bot.
+Perintah `!status` **hanya** dapat digunakan dari DM oleh LID admin yang diizinkan. Laporan ini tidak memuat API key; isinya hanya status koneksi WhatsApp, kesiapan Groq, VirusTotal, Jina Reader, dan Geoapify, model Groq aktif, kuota admin, status jam istirahat grup, serta zona waktu bot.
 
 ## Login Ulang
 
