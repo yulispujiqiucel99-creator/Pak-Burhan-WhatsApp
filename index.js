@@ -28,7 +28,7 @@ const GROQ_API_KEYS = [...new Set(
     .map((key) => key.trim())
     .filter(Boolean)
 )];
-const DEFAULT_GROQ_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
+const DEFAULT_GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.1-8b-instant";
 const GROQ_BASE_URL = (process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1").replace(/\/+$/, "");
 const DEFAULT_PRIVATE_ALLOWED_LID = (process.env.PRIVATE_ALLOWED_LID || "").replace(/\D/g, "");
 const DEFAULT_BOT_TIMEZONE = process.env.BOT_TIMEZONE || "Asia/Jakarta";

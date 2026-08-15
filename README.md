@@ -1,6 +1,6 @@
 # Pak Burhan WhatsApp Bot
 
-Bot WhatsApp persona **Pak Burhan** sebagai wali kelas 7D. Proyek ini menggunakan **Node.js, Baileys, Groq API**, serta Tavily dan Geoapify sebagai integrasi opsional. Model chat bawaan adalah **`openai/gpt-oss-120b`** dengan reasoning tingkat sedang agar jawaban lebih teliti.
+Bot WhatsApp persona **Pak Burhan** sebagai wali kelas 7D. Proyek ini menggunakan **Node.js, Baileys, Groq API**, serta Tavily dan Geoapify sebagai integrasi opsional. Model chat bawaan adalah **`llama-3.1-8b-instant`**.
 
 ## Fitur
 
