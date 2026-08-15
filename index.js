@@ -889,6 +889,9 @@ function classifyVirusTotalResult(stats) {
 
 function formatLinkSafetyResult(result) {
   if (result.status === "missing_key") return "🔒 Pemeriksaan keamanan belum aktif karena VIRUSTOTAL_API_KEY belum diatur.";
+  if (result.status === "auth_error") return "🔒 API key VirusTotal ditolak. Periksa kembali VIRUSTOTAL_API_KEY di Railway.";
+  if (result.status === "rate_limited") return "⏳ Batas VirusTotal sedang tercapai. Coba lagi beberapa saat ya. Isi link tidak dibaca dulu demi keamanan.";
+  if (result.status === "pending") return "⏳ VirusTotal masih memeriksa link ini. Isi link belum dibaca demi keamanan; coba kirim ulang beberapa saat lagi ya.";
   if (result.status === "error") return "⚠️ Pemeriksaan keamanan link sedang bermasalah. Isi link tidak dibaca demi keamanan.";
   if (result.status === "malicious") return `🚨 Link terdeteksi berbahaya oleh VirusTotal (${result.stats.malicious} deteksi). Jangan dibuka ya.`;
   if (result.status === "suspicious") return `⚠️ Link terdeteksi mencurigakan oleh VirusTotal (${result.stats.suspicious} indikator). Pak Burhan tidak akan membaca link ini.`;
@@ -909,6 +912,7 @@ async function checkUrlWithVirusTotal(url) {
   try {
     const urlId = encodeVirusTotalUrlId(url);
     let data;
+    let submittedAnalysis = false;
     try {
       const response = await axios.get(`${VIRUSTOTAL_BASE_URL}/urls/${urlId}`, {
         headers: { "x-apikey": VIRUSTOTAL_API_KEY },
@@ -927,17 +931,21 @@ async function checkUrlWithVirusTotal(url) {
       });
       const analysisId = scan.data?.data?.id;
       if (!analysisId) return { status: "error", url };
-      for (let attempt = 0; attempt < 4; attempt += 1) {
-        if (attempt) await delay(1500);
+      submittedAnalysis = true;
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        if (attempt) await delay(2000);
         data = await fetchVirusTotalAnalysis(analysisId);
         if (data?.attributes?.status === "completed") break;
+      }
+      if (data?.attributes?.status !== "completed") {
+        return { status: "pending", url };
       }
     }
 
     const analysisStatus = data?.attributes?.status;
     const rawStats = data?.attributes?.last_analysis_stats || data?.attributes?.stats;
-    if (!rawStats || (analysisStatus && analysisStatus !== "completed")) {
-      return { status: "error", url };
+    if (!rawStats || (analysisStatus && analysisStatus !== "completed" && !submittedAnalysis)) {
+      return { status: "pending", url };
     }
     const stats = getVirusTotalStats(data?.attributes);
     return {
@@ -947,7 +955,10 @@ async function checkUrlWithVirusTotal(url) {
       permalink: `https://www.virustotal.com/gui/url/${encodeVirusTotalUrlId(url)}`,
     };
   } catch (error) {
-    console.warn(`VirusTotal error (${error.response?.status || "-"}):`, error.message);
+    const httpStatus = error.response?.status;
+    console.warn(`VirusTotal error (${httpStatus || "-"}):`, error.message);
+    if (httpStatus === 401 || httpStatus === 403) return { status: "auth_error", url };
+    if (httpStatus === 429) return { status: "rate_limited", url };
     return { status: "error", url };
   }
 }

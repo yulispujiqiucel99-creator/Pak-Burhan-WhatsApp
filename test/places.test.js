@@ -68,6 +68,9 @@ test("membaca link, command ceklink, dan hasil pemeriksaan keamanan", () => {
   assert.equal(classifyVirusTotalResult({ malicious: 0, suspicious: 1 }), "suspicious");
   assert.equal(classifyVirusTotalResult({ malicious: 0, suspicious: 0 }), "clean");
   assert.match(formatLinkSafetyResult({ status: "malicious", stats: { malicious: 2 } }), /terdeteksi berbahaya/);
+  assert.match(formatLinkSafetyResult({ status: "pending" }), /masih memeriksa/);
+  assert.match(formatLinkSafetyResult({ status: "auth_error" }), /API key VirusTotal ditolak/);
+  assert.match(formatLinkSafetyResult({ status: "rate_limited" }), /Batas VirusTotal/);
 });
 
 test("tidak salah menandai pertanyaan sopan tentang Boyolali dan susu sebagai kasar", () => {
