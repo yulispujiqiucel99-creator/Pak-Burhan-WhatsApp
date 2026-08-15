@@ -39,6 +39,9 @@ const VIRUSTOTAL_BASE_URL = "https://www.virustotal.com/api/v3";
 const JINA_READER_BASE_URL = "https://r.jina.ai";
 const MAX_LINKS_PER_MESSAGE = 3;
 const MAX_LINK_CONTENT_CHARS = 5000;
+const AUTO_LINK_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const AUTO_LINK_CACHE_CLEAR_HOUR = 0;
+const AUTO_LINK_CACHE_CLEAR_MINUTE = 30;
 const GEOAPIFY_API_KEY = (process.env.GEOAPIFY_API_KEY || "").trim();
 const GROQ_VISION_MODEL = (process.env.GROQ_VISION_MODEL || "qwen/qwen3.6-27b").trim();
 const MAX_VISION_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -338,6 +341,8 @@ let BOT_STATE = {
 };
 let groupRestTimer = null;
 let classScheduleTimer = null;
+let autoLinkCacheTimer = null;
+const AUTO_LINK_CACHE = new Map();
 let memoryDirty = false;
 let memoryUpdateCount = 0;
 let lastMemorySave = Date.now();
@@ -961,6 +966,117 @@ async function checkUrlWithVirusTotal(url) {
     if (httpStatus === 429) return { status: "rate_limited", url };
     return { status: "error", url };
   }
+}
+
+function getAutoLinkCacheKey(url) {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+    return parsed.href;
+  } catch {
+    return String(url || "");
+  }
+}
+
+function clearAutoLinkCache() {
+  const previousSize = AUTO_LINK_CACHE.size;
+  AUTO_LINK_CACHE.clear();
+  if (previousSize) console.log(`Cache pemeriksaan link otomatis dibersihkan: ${previousSize} entri.`);
+}
+
+function startAutoLinkCacheScheduler() {
+  if (autoLinkCacheTimer) clearInterval(autoLinkCacheTimer);
+  let lastClearKey = "";
+  const checkSchedule = () => {
+    const now = new Date();
+    const { dateKey, hour, minute } = getZonedClockParts(now);
+    const clearKey = `${dateKey}-${hour}-${minute}`;
+    if (hour === AUTO_LINK_CACHE_CLEAR_HOUR && minute === AUTO_LINK_CACHE_CLEAR_MINUTE && clearKey !== lastClearKey) {
+      lastClearKey = clearKey;
+      clearAutoLinkCache();
+    }
+  };
+  checkSchedule();
+  autoLinkCacheTimer = setInterval(checkSchedule, 15 * 1000);
+  autoLinkCacheTimer.unref?.();
+}
+
+async function checkAutomaticUrl(url) {
+  const cacheKey = getAutoLinkCacheKey(url);
+  const cached = AUTO_LINK_CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.checkedAt < AUTO_LINK_CACHE_TTL_MS) return { ...cached.result, cached: true };
+  const result = await checkUrlWithVirusTotal(url);
+  if (["clean", "malicious", "suspicious"].includes(result.status)) {
+    AUTO_LINK_CACHE.set(cacheKey, { checkedAt: Date.now(), result });
+  }
+  return { ...result, cached: false };
+}
+
+function isAutoLinkScanGroup(jid) {
+  return Boolean(jid && BOT_STATE.classScheduleGroupJid && jid === BOT_STATE.classScheduleGroupJid);
+}
+
+function hasManualLinkCommand(text) {
+  const lower = String(text || "").trim().toLowerCase();
+  return lower.startsWith(`${PREFIX}ceklink`) || lower.startsWith(`${PREFIX}cari`) || lower.startsWith(`${PREFIX}search`);
+}
+
+async function setMessageReaction(sock, jid, key, text) {
+  try {
+    await sock.sendMessage(jid, { react: { text, key } });
+    return true;
+  } catch (error) {
+    console.warn(`Gagal memberi reaksi ${text || "hapus"}:`, error.message);
+    return false;
+  }
+}
+
+function formatAutomaticLinkWarning(results, deleted = true) {
+  const malicious = results.filter((result) => result.status === "malicious");
+  const suspicious = results.filter((result) => result.status === "suspicious");
+  const deletionText = deleted ? "Pesan sudah dihapus demi keamanan." : "Bot belum bisa menghapus pesan; pastikan Pak Burhan menjadi admin grup.";
+  if (malicious.length) {
+    const count = malicious.reduce((sum, result) => sum + (result.stats?.malicious || 0), 0);
+    return `🚨 Link ini terdeteksi berbahaya oleh VirusTotal (${count || malicious.length} deteksi). ${deletionText} Jangan dibuka atau masukkan password, OTP, maupun data pribadi ya.`;
+  }
+  if (suspicious.length) {
+    const count = suspicious.reduce((sum, result) => sum + (result.stats?.suspicious || 0), 0);
+    return `⚠️ Link ini terdeteksi mencurigakan oleh VirusTotal (${count || suspicious.length} indikator). ${deletionText} Sebaiknya jangan dibuka ya.`;
+  }
+  return "⚠️ Link belum dapat dinyatakan aman karena pemeriksaan VirusTotal mengalami kendala. Pesan tidak dihapus; coba periksa dengan !ceklink jika diperlukan.";
+}
+
+async function handleAutomaticLinks(sock, msg, jid, text) {
+  if (!isJidGroup(jid) || !isAutoLinkScanGroup(jid) || hasManualLinkCommand(text)) return false;
+  const urls = extractUrls(text);
+  if (!urls.length) return false;
+  if (!VIRUSTOTAL_API_KEY) return false;
+
+  await setMessageReaction(sock, jid, msg.key, "🧐");
+  const results = [];
+  for (const url of urls) results.push(await checkAutomaticUrl(url));
+  const failed = results.some((result) => !["clean", "malicious", "suspicious"].includes(result.status));
+  const unsafe = results.some((result) => result.status === "malicious" || result.status === "suspicious");
+  if (!failed && !unsafe) {
+    await setMessageReaction(sock, jid, msg.key, "✅");
+    return true;
+  }
+  await setMessageReaction(sock, jid, msg.key, "❌");
+  const warning = formatAutomaticLinkWarning(results);
+  if (!failed && unsafe) {
+    await sock.sendMessage(jid, { text: "⚠️ Link terdeteksi berisiko. Pesannya sedang dihapus demi keamanan." }, { quoted: msg });
+    let deleted = false;
+    try {
+      await sock.sendMessage(jid, { delete: msg.key });
+      deleted = true;
+    } catch (error) {
+      console.warn("Gagal menghapus pesan link berbahaya:", error.message);
+    }
+    await sock.sendMessage(jid, { text: formatAutomaticLinkWarning(results, deleted) });
+  } else {
+    await sock.sendMessage(jid, { text: warning }, { quoted: msg });
+  }
+  return true;
 }
 
 async function readUrlWithJina(url) {
@@ -1942,6 +2058,7 @@ async function handleMessage(sock, msg) {
         console.log("[G] pesan dengan mention massal diabaikan.");
         return;
       }
+      if (await handleAutomaticLinks(sock, msg, jid, text)) return;
       const mentions = getMentionedJids(msg);
       const botIdentities = getBotIdentityJids(sock);
       const mentionSource = getBotMentionSource(msg, sock, text);
@@ -2420,6 +2537,7 @@ async function startBot() {
       await notifyScheduleActivation(sock, defaultScheduleActivation);
       startGroupRestScheduler(sock);
       startClassScheduleScheduler(sock);
+      startAutoLinkCacheScheduler();
     }
 
     if (connection === "close") {
@@ -2507,8 +2625,10 @@ module.exports = {
   encodeVirusTotalUrlId,
   getVirusTotalStats,
   classifyVirusTotalResult,
-  formatLinkSafetyResult,
-
+    formatLinkSafetyResult,
+  getAutoLinkCacheKey,
+  formatAutomaticLinkWarning,
+  isAutoLinkScanGroup,
 };
 
 if (require.main === module) {

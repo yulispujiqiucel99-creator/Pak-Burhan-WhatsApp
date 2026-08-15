@@ -43,6 +43,9 @@ const {
   getVirusTotalStats,
   classifyVirusTotalResult,
   formatLinkSafetyResult,
+  getAutoLinkCacheKey,
+  formatAutomaticLinkWarning,
+  isAutoLinkScanGroup,
 } = require("../index");
 
 test("membaca link, command ceklink, dan hasil pemeriksaan keamanan", () => {
@@ -71,6 +74,11 @@ test("membaca link, command ceklink, dan hasil pemeriksaan keamanan", () => {
   assert.match(formatLinkSafetyResult({ status: "pending" }), /masih memeriksa/);
   assert.match(formatLinkSafetyResult({ status: "auth_error" }), /API key VirusTotal ditolak/);
   assert.match(formatLinkSafetyResult({ status: "rate_limited" }), /Batas VirusTotal/);
+  assert.equal(getAutoLinkCacheKey("https://example.com/a#one"), "https://example.com/a");
+  assert.equal(getAutoLinkCacheKey("https://example.com/a#two"), "https://example.com/a");
+  assert.match(formatAutomaticLinkWarning([{ status: "malicious", stats: { malicious: 13 } }]), /13 deteksi/);
+  assert.match(formatAutomaticLinkWarning([{ status: "suspicious", stats: { suspicious: 2 } }]), /2 indikator/);
+  assert.equal(isAutoLinkScanGroup("123@g.us"), false);
 });
 
 test("tidak salah menandai pertanyaan sopan tentang Boyolali dan susu sebagai kasar", () => {
