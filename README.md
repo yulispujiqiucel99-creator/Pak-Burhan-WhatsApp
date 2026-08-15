@@ -71,7 +71,7 @@ Gunakan command manual:
 !cari https://contoh.com/artikel
 ```
 
-Pesan biasa yang mengandung URL juga akan diproses otomatis setelah profil pengguna lengkap. Bot memeriksa maksimal tiga URL dalam satu pesan, menghentikan proses jika VirusTotal melaporkan URL berbahaya atau mencurigakan, lalu hanya mengirimkan teks halaman yang sudah diambil ke Groq. **Hasil “belum terdeteksi” bukan jaminan mutlak bahwa sebuah URL aman.** Jangan kirim URL yang mengandung token login, reset password, undangan privat, atau data pribadi karena URL tersebut dikirim ke layanan pihak ketiga.
+Pesan biasa yang mengandung URL juga akan diproses otomatis setelah profil pengguna lengkap. Bot memeriksa maksimal tiga URL dalam satu pesan, menghentikan proses jika VirusTotal melaporkan URL berbahaya atau mencurigakan, lalu hanya mengirimkan maksimal **5.000 karakter total** dari teks halaman ke Groq. Konteks riwayat untuk analisis link dan panjang jawaban juga dibatasi agar tidak melewati batas token model. **Hasil “belum terdeteksi” bukan jaminan mutlak bahwa sebuah URL aman.** Jangan kirim URL yang mengandung token login, reset password, undangan privat, atau data pribadi karena URL tersebut dikirim ke layanan pihak ketiga.
 
 VirusTotal Public API mempunyai batas penggunaan dan aturan penggunaan produk. Untuk detailnya, lihat [dokumentasi VirusTotal Public API](https://docs.virustotal.com/reference/public-vs-premium-api). Jina Reader dapat dibaca melalui [dokumentasi resmi Jina Reader](https://jina.ai/reader/). API key tidak pernah dicetak ke chat, log, atau repository.
 
