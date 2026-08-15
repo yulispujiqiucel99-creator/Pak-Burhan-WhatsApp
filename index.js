@@ -2448,14 +2448,7 @@ async function handleMessage(sock, msg) {
         return;
       }
 
-      if (!consumeQuestionQuota(senderId)) {
-        await sock.sendMessage(jid, { text: buildQuestionLimitReply(profile) }, { quoted: msg });
-        return;
-      }
-
-      await sock.sendPresenceUpdate("composing", jid).catch(() => {});
-      const placeSearch = await searchPlaces(placeCommand.searchTerm, placeCommand.location);
-      if (placeSearch.error === "missing_key") {
+      if (!GEOAPIFY_API_KEY) {
         await sock.sendMessage(
           jid,
           { text: "Fitur pencarian tempat belum aktif karena GEOAPIFY_API_KEY belum tersimpan di Railway. Hubungi admin ya." },
@@ -2463,6 +2456,20 @@ async function handleMessage(sock, msg) {
         );
         return;
       }
+      if (!consumeQuestionQuota(senderId)) {
+        await sock.sendMessage(jid, { text: buildQuestionLimitReply(profile) }, { quoted: msg });
+        return;
+      }
+      if (isGroup) {
+        groupQueueTicket = reserveGroupRequest(jid);
+        if (groupQueueTicket.shouldNotify) {
+          await sock.sendMessage(jid, { text: formatQueueReply(groupQueueTicket.position) }, { quoted: msg });
+        }
+        await groupQueueTicket.waitForTurn();
+      }
+
+      await sock.sendPresenceUpdate("composing", jid).catch(() => {});
+      const placeSearch = await searchPlaces(placeCommand.searchTerm, placeCommand.location);
       if (placeSearch.error === "location_not_found") {
         await sock.sendMessage(
           jid,
