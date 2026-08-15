@@ -87,7 +87,7 @@ assets/weekend-audio/sabtu.mp3
 assets/weekend-audio/minggu.mp3
 ```
 
-Bot akan mengirim file Sabtu pada pukul **07.00 WIB** hari Sabtu dan file Minggu pada pukul **07.00 WIB** hari Minggu. Setiap file dibatasi maksimal **2 menit**, dikonversi ke Ogg/Opus agar tampil sebagai voice note, lalu hanya file hasil konversi sementara yang dihapus. File sumber tetap ada di GitHub agar dapat dipakai pada akhir pekan berikutnya. Status pengiriman disimpan agar restart bot tidak mengirim ulang pada tanggal yang sama.
+Bot akan mengirim file Sabtu pada pukul **07.00 WIB** hari Sabtu dan file Minggu pada pukul **07.00 WIB** hari Minggu. Selain itu, command `!jadwal sabtu` dan `!jadwal minggu` juga mengirim audio libur masing-masing bersama teks jadwal. Setiap file dibatasi maksimal **2 menit**, dikonversi ke Ogg/Opus agar tampil sebagai voice note, lalu hanya file hasil konversi sementara yang dihapus. File sumber tetap ada di GitHub agar dapat dipakai pada akhir pekan berikutnya. Status pengiriman otomatis disimpan agar restart bot tidak mengirim ulang pada tanggal yang sama.
 
 ## Mencari Tempat dan Mengirim Lokasi
 
