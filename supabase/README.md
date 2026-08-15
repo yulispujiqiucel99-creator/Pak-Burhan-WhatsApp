@@ -4,9 +4,9 @@ Bot Pak Burhan menggunakan Supabase hanya untuk menyimpan data kecil profil peng
 
 ## Persiapan sekali saja
 
-Buka **Supabase Dashboard → SQL Editor**, lalu jalankan seluruh isi file [`migrate_to_profiles.sql`](./migrate_to_profiles.sql). Migrasi tersebut membuat tabel `public.profiles` dan menghapus tabel lama `public.bot_settings` sesuai keputusan proyek.
+Migration pertama berada di [`migrations/20260815000000_create_profiles.sql`](./migrations/20260815000000_create_profiles.sql). Setelah secret GitHub Actions disiapkan, workflow `.github/workflows/supabase-migrations.yml` akan menjalankannya ke Supabase ketika migration di-push ke branch `main`. Untuk migrasi pertama yang menghapus tabel lama, pastikan tidak ada data penting yang masih dibutuhkan.
 
-> Perintah `drop table if exists public.bot_settings;` bersifat destruktif. Pastikan Anda memang tidak lagi membutuhkan data konfigurasi lama sebelum menekan Run.
+> Perintah `drop table if exists public.bot_settings;` bersifat destruktif. Pastikan Anda memang tidak lagi membutuhkan data konfigurasi lama sebelum workflow dijalankan. Jika migration pertama ingin dijalankan manual, tempel isi file migration tersebut ke SQL Editor satu kali.
 
 Setelah itu, buka **Railway → Variables** dan pastikan dua koneksi berikut tersedia. Nilainya jangan disimpan di GitHub atau dikirim melalui chat.
 
@@ -30,6 +30,12 @@ Gunakan key `service_role` dari **Supabase Dashboard → Project Settings → AP
 Saat pengguna pertama kali mengirim nama dan gender, bot menyimpan profil ke Supabase. Profil juga disalin ke cache lokal agar bot tetap dapat memakai data terakhir ketika Supabase sementara tidak tersedia. Perintah `!profil ulang` atau `!reset profil` menghapus profil dari cache lokal dan Supabase.
 
 Data profil tidak dibuka melalui anon key karena tabel menggunakan Row Level Security tanpa policy publik. Bot mengaksesnya memakai `SUPABASE_SERVICE_ROLE_KEY` dari Railway.
+
+## Otomatisasi migration
+
+Workflow GitHub Actions membutuhkan tiga repository secrets: `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, dan `SUPABASE_PROJECT_ID`. Tambahkan melalui **GitHub → Settings → Secrets and variables → Actions**. Jangan menulis nilainya di YAML, README, atau chat.
+
+Workflow hanya berjalan ketika file di `supabase/migrations/**` berubah atau ketika dijalankan manual melalui **GitHub → Actions → Supabase migrations → Run workflow**. Setelah `supabase db push`, workflow menjalankan `supabase migration list` sebagai pemeriksaan riwayat migration.
 
 ## Data yang tetap berada di kode
 
