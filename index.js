@@ -607,6 +607,7 @@ function getTimeReply(profile) {
 async function processProfileOnboarding(profileId, lid, text) {
   const existing = await loadProfileFromSupabase(lid, profileId);
   if (existing?.name && existing?.gender) {
+    await saveProfileToSupabase(lid, existing);
     return { ready: true, profile: existing };
   }
 
