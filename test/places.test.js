@@ -317,11 +317,10 @@ test("menampilkan pesan libur pada Sabtu dan Minggu", () => {
   assert.match(formatClassScheduleMessage("minggu"), /Hari ini libur/);
 });
 
-test("menemukan audio jadwal untuk setiap hari sekolah", () => {
-  for (const dayKey of ["senin", "selasa", "rabu", "kamis", "jumat"]) {
+test("menemukan audio jadwal untuk setiap hari dalam seminggu", () => {
+  for (const dayKey of ["senin", "selasa", "rabu", "kamis", "jumat", "sabtu", "minggu"]) {
     assert.match(getClassScheduleAudioPath(dayKey), new RegExp(`${dayKey}\\.ogg$`));
   }
-  assert.equal(getClassScheduleAudioPath("sabtu"), null);
 });
 
 test("membaca hari jadwal dan hanya mengirim pada pukul 17.00 atau 20.00 WIB", () => {

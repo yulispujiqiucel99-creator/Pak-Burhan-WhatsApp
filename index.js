@@ -85,7 +85,7 @@ const DEFAULT_CLASS_SCHEDULE_INVITE_LINK = "https://chat.whatsapp.com/Kp4ULXH1AB
 const DEFAULT_CLASS_SCHEDULE_INVITE_CODE = "Kp4ULXH1ABh3OS2niLCe8P";
 const CLASS_SCHEDULE_AUDIO_DIR = path.join(__dirname, "assets", "schedule-audio");
 const CLASS_SCHEDULE_AUDIO_FILES = Object.fromEntries(
-  ["senin", "selasa", "rabu", "kamis", "jumat"].map((dayKey) => [
+  ["senin", "selasa", "rabu", "kamis", "jumat", "sabtu", "minggu"].map((dayKey) => [
     dayKey,
     path.join(CLASS_SCHEDULE_AUDIO_DIR, `${dayKey}.ogg`),
   ])
@@ -1777,41 +1777,20 @@ function formatClassScheduleMessage(dayKey, date = new Date()) {
   ].join("\n");
 }
 
-async function sendScheduleAudio(sock, jid, dayKey, sendOptions) {
-  const weekdayAudioPath = getClassScheduleAudioPath(dayKey);
-  if (weekdayAudioPath) {
-    await sock.sendMessage(
-      jid,
-      {
-        audio: fs.readFileSync(weekdayAudioPath),
-        mimetype: "audio/ogg; codecs=opus",
-        ptt: true,
-      },
-      sendOptions
-    );
-    return true;
-  }
-  if (!WEEKEND_AUDIO_PATHS[dayKey]) return false;
-  const audio = await prepareWeekendAudio(dayKey);
-  if (!audio) return false;
-  try {
-    await sock.sendMessage(
-      jid,
-      {
-        audio: fs.readFileSync(audio.path),
-        mimetype: "audio/ogg; codecs=opus",
-        ptt: true,
-      },
-      sendOptions
-    );
-    return true;
-  } finally {
-    await fs.promises.unlink(audio.path).catch(() => {});
-  }
-}
 async function sendClassScheduleContent(sock, jid, dayKey, date = new Date(), { includeAudio = false, quoted = null } = {}) {
   const sendOptions = quoted ? { quoted } : undefined;
-  if (includeAudio) await sendScheduleAudio(sock, jid, dayKey, sendOptions);
+  const audioPath = includeAudio ? getClassScheduleAudioPath(dayKey) : null;
+  if (audioPath) {
+    await sock.sendMessage(
+      jid,
+      {
+        audio: fs.readFileSync(audioPath),
+        mimetype: "audio/ogg; codecs=opus",
+        ptt: true,
+      },
+      sendOptions
+    );
+  }
   await sock.sendMessage(jid, { text: formatClassScheduleMessage(dayKey, date) }, sendOptions);
 }
 
