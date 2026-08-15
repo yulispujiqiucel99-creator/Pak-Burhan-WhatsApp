@@ -16,6 +16,7 @@ const {
 } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const axios = require("axios");
+const sharp = require("sharp");
 const fs = require("fs");
 const path = require("path");
 const { execFile } = require("child_process");
@@ -48,6 +49,10 @@ const AUTO_LINK_CACHE_CLEAR_MINUTE = 30;
 const GEOAPIFY_API_KEY = (process.env.GEOAPIFY_API_KEY || "").trim();
 const GROQ_VISION_MODEL = (process.env.GROQ_VISION_MODEL || "qwen/qwen3.6-27b").trim();
 const MAX_VISION_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_STICKER_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_STICKER_TEXT_CHARS = 180;
+const MAX_STICKER_TEXT_LINES = 6;
+const STICKER_CANVAS_SIZE = 512;
 const WEEKEND_AUDIO_PATHS = {
   sabtu: (process.env.WEEKEND_AUDIO_SATURDAY_PATH || path.join(__dirname, "assets", "weekend-audio", "sabtu.mp3")).trim(),
   minggu: (process.env.WEEKEND_AUDIO_SUNDAY_PATH || path.join(__dirname, "assets", "weekend-audio", "minggu.mp3")).trim(),
@@ -187,6 +192,9 @@ const DEFAULT_COMMANDS = [
   { command: `${PREFIX}ceklink [URL]`, description: "Memeriksa keamanan link lalu membaca dan menjelaskan isinya. Link yang dikirim tanpa command juga dapat diproses otomatis." },
   { command: `${PREFIX}tempat [jenis/nama] di [lokasi]`, description: "Mencari satu tempat dan mengirim satu lokasi yang dapat dibuka di WhatsApp. Contoh: !tempat kafe di Solo." },
   { command: `${PREFIX}gambar [pertanyaan]`, description: "Kirim foto dengan caption !gambar untuk dianalisis. Contoh: !gambar tolong jelaskan soal ini." },
+  { command: `${PREFIX}stiker`, description: "Ubah gambar menjadi sticker. Bisa dipakai pada caption gambar atau saat membalas gambar." },
+  { command: `${PREFIX}brat [teks]`, description: "Membuat sticker teks bergaya Brat. Contoh: !brat apasihhh." },
+  { command: `${PREFIX}iqc [teks]`, description: "Membuat sticker teks bergaya IQC. Contoh: !iqc yang ytta aja." },
   { command: `${PREFIX}jadwal [hari]`, description: "Menampilkan pelajaran, piket kelas, dan piket MBG VII D. Contoh: !jadwal senin." },
   { command: `${PREFIX}aktifkan jadwal [tautan grup]`, description: "Khusus DM admin: mengaktifkan kirim jadwal otomatis pukul 17.00 dan 20.00 WIB tanpa menulis perintah di grup." },
   { command: `${PREFIX}nonaktifkan jadwal`, description: "Khusus DM admin: menghentikan pengiriman jadwal otomatis." },
@@ -1196,8 +1204,152 @@ function parseImageCommand(text) {
   return question ? { question } : { error: "empty" };
 }
 
+function parseStickerCommand(text) {
+  const match = String(text || "")
+    .trim()
+    .match(new RegExp(`^${escapeRegExp(PREFIX)}(?:stiker|sticker)(?:\\s+(.+))?$`, "i"));
+  if (!match) return null;
+  const extraText = String(match[1] || "").trim();
+  return extraText ? { error: "text_not_supported", text: extraText } : { mode: "image" };
+}
+
+function parseTextStickerCommand(text) {
+  const value = String(text || "").trim();
+  const match = value.match(new RegExp(`^${escapeRegExp(PREFIX)}(brat|iqc)(?:\\s+([\\s\\S]+))?$`, "i"));
+  if (!match) return null;
+  const stickerText = String(match[2] || "").trim();
+  return {
+    style: match[1].toLowerCase(),
+    text: stickerText,
+    error: stickerText ? null : "empty",
+  };
+}
+
 function getImageMessage(messageContent) {
   return messageContent?.imageMessage || null;
+}
+
+function getQuotedMessage(msg) {
+  const message = normalizeMessageContent(msg?.message);
+  const contextInfo =
+    message?.extendedTextMessage?.contextInfo ||
+    message?.imageMessage?.contextInfo ||
+    message?.videoMessage?.contextInfo ||
+    message?.documentMessage?.contextInfo ||
+    null;
+  const quotedMessage = contextInfo?.quotedMessage;
+  if (!quotedMessage) return null;
+  return {
+    key: {
+      remoteJid: msg?.key?.remoteJid,
+      id: contextInfo.stanzaId,
+      participant: contextInfo.participant,
+    },
+    message: quotedMessage,
+  };
+}
+
+function getQuotedImageMessage(msg) {
+  const quoted = getQuotedMessage(msg);
+  if (!quoted) return null;
+  const quotedContent = normalizeMessageContent(quoted.message);
+  const imageMessage = getImageMessage(quotedContent);
+  return imageMessage ? { message: imageMessage, source: quoted } : null;
+}
+
+function getStickerImageSource(msg, messageContent) {
+  const directImage = getImageMessage(messageContent);
+  if (directImage) return { message: directImage, source: msg };
+  return getQuotedImageMessage(msg);
+}
+
+function getSafeStickerMimeType(imageMessage) {
+  const mimeType = String(imageMessage?.mimetype || "image/jpeg").toLowerCase();
+  return /^image\/(jpeg|jpg|png|webp)$/i.test(mimeType) ? mimeType : null;
+}
+
+function validateStickerImage(imageBuffer, imageMessage) {
+  if (!Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) return { error: "download_failed" };
+  if (imageBuffer.length > MAX_STICKER_IMAGE_BYTES) return { error: "too_large" };
+  const mimeType = getSafeStickerMimeType(imageMessage);
+  if (!mimeType) return { error: "unsupported_type" };
+  return { mimeType };
+}
+
+function escapeXml(text) {
+  return String(text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function wrapStickerText(text, maxChars = 16) {
+  const words = String(text || "").trim().split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = "";
+  for (const word of words) {
+    if (word.length > maxChars) {
+      if (current) {
+        lines.push(current);
+        current = "";
+      }
+      for (let index = 0; index < word.length; index += maxChars) {
+        lines.push(word.slice(index, index + maxChars));
+      }
+      continue;
+    }
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length > maxChars && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+function validateStickerText(text) {
+  const value = String(text || "").replace(/\s+/g, " ").trim();
+  if (!value) return { error: "empty" };
+  if (value.length > MAX_STICKER_TEXT_CHARS) return { error: "too_long" };
+  const lines = wrapStickerText(value);
+  if (!lines.length || lines.length > MAX_STICKER_TEXT_LINES) return { error: "too_long" };
+  return { text: value, lines };
+}
+
+async function renderImageSticker(imageBuffer) {
+  return sharp(imageBuffer, { failOn: "error" })
+    .rotate()
+    .resize(STICKER_CANVAS_SIZE, STICKER_CANVAS_SIZE, {
+      fit: "contain",
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
+    .webp({ quality: 82 })
+    .toBuffer();
+}
+
+async function renderTextSticker(text, style = "brat") {
+  const validation = validateStickerText(text);
+  if (validation.error) return { error: validation.error };
+  const lines = validation.lines;
+  const fontSize = lines.length <= 2 ? 72 : lines.length <= 4 ? 58 : 46;
+  const lineHeight = Math.round(fontSize * 1.16);
+  const startY = Math.round((STICKER_CANVAS_SIZE - (lines.length - 1) * lineHeight) / 2 + fontSize * 0.35);
+  const background = style === "iqc" ? "#fffdf3" : "#b8f56a";
+  const foreground = "#111111";
+  const textNodes = lines
+    .map((line, index) => `<text x="256" y="${startY + index * lineHeight}" text-anchor="middle">${escapeXml(line)}</text>`)
+    .join("");
+  const svg = `<svg width="${STICKER_CANVAS_SIZE}" height="${STICKER_CANVAS_SIZE}" viewBox="0 0 ${STICKER_CANVAS_SIZE} ${STICKER_CANVAS_SIZE}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" rx="28" fill="${background}"/><g fill="${foreground}" font-family="Noto Sans, Arial, sans-serif" font-size="${fontSize}px" font-weight="700">${textNodes}</g></svg>`;
+  return { buffer: await sharp(Buffer.from(svg)).webp({ quality: 90 }).toBuffer(), text: validation.text };
+}
+
+async function downloadStickerImage(msg, source) {
+  return downloadMediaMessage(source, "buffer", {}, { logger: pino({ level: "silent" }) });
 }
 
 function getSafeImageMimeType(imageMessage) {
@@ -2197,6 +2349,74 @@ async function handleMessage(sock, msg) {
       return;
     }
 
+    const stickerCommand = parseStickerCommand(text);
+    const textStickerCommand = parseTextStickerCommand(text);
+    if (stickerCommand || textStickerCommand) {
+      if (stickerCommand?.error === "text_not_supported") {
+        await sock.sendMessage(
+          jid,
+          { text: `Untuk sticker gambar, kirim atau reply gambar dengan caption ${PREFIX}stiker tanpa teks tambahan ya.` },
+          { quoted: msg }
+        );
+        return;
+      }
+      if (stickerCommand?.mode === "image") {
+        const source = getStickerImageSource(msg, messageContent);
+        if (!source) {
+          await sock.sendMessage(
+            jid,
+            { text: `Kirim gambar dengan caption ${PREFIX}stiker atau reply gambar lalu tulis ${PREFIX}stiker ya.` },
+            { quoted: msg }
+          );
+          return;
+        }
+        let imageBuffer;
+        try {
+          imageBuffer = await downloadStickerImage(msg, source.source);
+          const validation = validateStickerImage(imageBuffer, source.message);
+          if (validation.error === "too_large") {
+            await sock.sendMessage(jid, { text: "Ukuran gambar terlalu besar. Kirim gambar maksimal 10 MB ya." }, { quoted: msg });
+            return;
+          }
+          if (validation.error === "unsupported_type") {
+            await sock.sendMessage(jid, { text: "Pak Burhan baru bisa membuat sticker dari gambar JPG, PNG, atau WebP ya." }, { quoted: msg });
+            return;
+          }
+          if (validation.error) throw new Error(validation.error);
+          const stickerBuffer = await renderImageSticker(imageBuffer);
+          await sock.sendMessage(jid, { sticker: stickerBuffer }, { quoted: msg });
+        } catch (error) {
+          console.warn("Pembuatan sticker gambar gagal:", error.message);
+          await sock.sendMessage(jid, { text: "Maaf, gambar belum bisa dijadikan sticker. Coba kirim gambar yang lebih kecil ya." }, { quoted: msg });
+        }
+        return;
+      }
+      if (textStickerCommand?.error === "empty") {
+        await sock.sendMessage(
+          jid,
+          { text: `Tulis teks setelah ${PREFIX}${textStickerCommand.style} ya. Contoh: ${PREFIX}${textStickerCommand.style} apasihhh` },
+          { quoted: msg }
+        );
+        return;
+      }
+      if (textStickerCommand?.error === "too_long") {
+        await sock.sendMessage(jid, { text: "Teks sticker terlalu panjang. Pendekkan sampai maksimal 180 karakter ya." }, { quoted: msg });
+        return;
+      }
+      try {
+        const rendered = await renderTextSticker(textStickerCommand.text, textStickerCommand.style);
+        if (rendered.error === "too_long") {
+          await sock.sendMessage(jid, { text: "Teks sticker terlalu panjang. Pendekkan sampai maksimal 180 karakter ya." }, { quoted: msg });
+          return;
+        }
+        await sock.sendMessage(jid, { sticker: rendered.buffer }, { quoted: msg });
+      } catch (error) {
+        console.warn(`Pembuatan sticker ${textStickerCommand.style} gagal:`, error.message);
+        await sock.sendMessage(jid, { text: "Maaf, sticker teks belum bisa dibuat. Coba teks yang lebih singkat ya." }, { quoted: msg });
+      }
+      return;
+    }
+
     const scheduleActivation = parseScheduleActivationCommand(text);
     if (scheduleActivation) {
       if (isGroup || senderLid !== BOT_SETTINGS.private_allowed_lid) {
@@ -2686,7 +2906,18 @@ module.exports = {
   formatQueueReply,
   reserveGroupRequest,
   parseImageCommand,
+  parseStickerCommand,
+  parseTextStickerCommand,
   getImageMessage,
+  getQuotedMessage,
+  getQuotedImageMessage,
+  getStickerImageSource,
+  getSafeStickerMimeType,
+  validateStickerImage,
+  wrapStickerText,
+  validateStickerText,
+  renderImageSticker,
+  renderTextSticker,
   getSafeImageMimeType,
   validateVisionImage,
   parsePlaceCommand,

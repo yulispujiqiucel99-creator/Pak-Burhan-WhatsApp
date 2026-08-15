@@ -8,13 +8,15 @@
     "start": "node index.js",
     "dev": "node index.js",
     "test": "node --test",
-    "test:jadwal": "node --test test/schedule-fast.test.js"
+    "test:jadwal": "node --test test/schedule-fast.test.js",
+    "test:sticker": "node --test test/sticker-fast.test.js"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.18",
     "axios": "^1.7.9",
     "dotenv": "^16.4.7",
-    "pino": "^9.6.0"
+    "pino": "^9.6.0",
+    "sharp": "^0.35.3"
   },
   "engines": {
     "node": ">=20"

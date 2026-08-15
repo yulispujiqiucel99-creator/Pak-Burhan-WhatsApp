@@ -22,6 +22,10 @@ npm start
 
 Isi `GROQ_API_KEYS` pada `.env` sebelum menjalankan bot. API key dibuat dari [Groq Console](https://console.groq.com/keys); jangan pernah menyimpan key asli ke repository.
 
+### Test
+
+Untuk iterasi sticker, jalankan `npm run test:sticker`. Untuk perubahan jadwal, jalankan `npm run test:jadwal`. Pemeriksaan penuh tersedia melalui `npm test` dan dijalankan sebelum rilis besar.
+
 ## Variabel Lingkungan
 
 | Key | Keterangan |
@@ -108,17 +112,23 @@ Gunakan `!gambar` untuk menganalisis satu foto seperti soal, halaman buku, tabel
 
 Bot hanya memproses foto JPG, PNG, atau WebP dengan ukuran maksimum **20 MB**. Setiap analisis gambar memakai satu kuota pertanyaan LID. Foto diunduh sementara ke memori untuk dikirim ke Groq Vision lalu tidak disimpan permanen oleh bot. Jika tulisan pada foto buram, hasil analisis dapat keliru; periksa kembali jawaban penting.
 
+## Membuat Sticker
+
+Fitur sticker menggunakan pemrosesan lokal dan tidak memanggil Groq, Supabase, VirusTotal, atau Jina. Di grup, command harus diawali mention bot sesuai aturan umum. Untuk mengubah gambar menjadi sticker, kirim gambar dengan caption **`@bot !stiker`**, atau reply gambar lalu kirim **`@bot !stiker`**. Alias **`!sticker`** juga diterima.
+
+Untuk membuat sticker teks, gunakan **`@bot !brat apasihhh`** atau **`@bot !iqc yang ytta aja`**. Ukuran gambar dibatasi maksimal 10 MB dan teks sticker dibatasi maksimal 180 karakter. Hasil diproses sebagai WebP di memori sementara, lalu dikirim dan tidak disimpan ke Supabase, `MEMORY`, atau repository.
+
 ## Jadwal Kelas VII D
 
 Perintah `!jadwal` menampilkan satu pesan yang memuat daftar pelajaran, piket kelas, dan piket MBG untuk hari berjalan. Untuk melihat hari tertentu, gunakan `!jadwal senin` sampai `!jadwal minggu`. Sabtu dan Minggu akan menampilkan informasi libur.
 
 Bot juga memahami pertanyaan jadwal tanpa perintah, misalnya `Pak, jadwal besok apa?`, `Piket hari ini siapa?`, atau `Pelajaran Senin apa, Pak?`. Bot menentukan hari berdasarkan **WIB** dan menjawab langsung dari data jadwal, sehingga pertanyaan tersebut tidak memakai kuota AI.
 
-Grup VII D dari tautan default yang sudah ditentukan akan dicoba diaktifkan otomatis setiap kali bot tersambung. Jika berhasil, admin menerima pesan `[nama grup] sudah dijadikan jadwal otomatis`; jika gagal, admin menerima pesan gagal di DM. Admin dapat membalas langsung pesan gagal tersebut dengan tautan grup baru untuk mencoba ulang. Bot memeriksa tautan dan memastikan akun bot sudah menjadi anggota grup, tetapi tidak akan bergabung otomatis melalui tautan tersebut. Setelah aktif, bot mengirimkan **voice note jadwal** dan pesan teks kelas pada **17.00 WIB** dan **20.00 WIB** setiap hari. Voice note menggunakan aset Ogg/Opus di `assets/schedule-audio/` untuk Senin sampai Jumat, sedangkan teks tetap dikirim agar daftar pelajaran dan nama petugas mudah dibaca. Perintah manual `!jadwal senin` sampai `!jadwal jumat` juga mengirim voice note sesuai hari, sedangkan Sabtu dan Minggu hanya menampilkan informasi libur. Setiap pesan teks jadwal diakhiri catatan darurat sesuai format yang telah ditetapkan. Admin dapat menghentikannya dari DM dengan `!nonaktifkan jadwal`; pada koneksi berikutnya, target default akan dicoba diaktifkan kembali.
+Grup VII D dari tautan default yang sudah ditentukan akan dicoba diaktifkan otomatis setiap kali bot tersambung. Jika berhasil, admin menerima pesan `[nama grup] sudah dijadikan jadwal otomatis`; jika gagal, admin menerima pesan gagal di DM. Admin dapat membalas langsung pesan gagal tersebut dengan tautan grup baru untuk mencoba ulang. Bot memeriksa tautan dan memastikan akun bot sudah menjadi anggota grup, tetapi tidak akan bergabung otomatis melalui tautan tersebut. Setelah aktif, bot mengirimkan **voice note jadwal** dan pesan teks kelas pada **17.00 WIB** dan **20.00 WIB** setiap hari. Voice note menggunakan aset Ogg/Opus di `assets/schedule-audio/` untuk Senin sampai Minggu, sedangkan teks tetap dikirim agar daftar pelajaran dan informasi libur mudah dibaca. Perintah manual `!jadwal senin` sampai `!jadwal minggu` juga mengirim voice note sesuai hari. Setiap pesan teks jadwal diakhiri catatan darurat sesuai format yang telah ditetapkan. Admin dapat menghentikannya dari DM dengan `!nonaktifkan jadwal`; pada koneksi berikutnya, target default akan dicoba diaktifkan kembali.
 
 ## Aset Audio Jadwal
 
-Lima aset voice note jadwal disimpan dengan nama hari yang sederhana: `senin.ogg`, `selasa.ogg`, `rabu.ogg`, `kamis.ogg`, dan `jumat.ogg`. Semua aset dikonversi ke **Opus mono 48 kHz** agar dikirim sebagai voice note WhatsApp. Bagian paling bawah pesan teks jadwal memuat:
+Tujuh aset voice note jadwal disimpan dengan nama hari yang sederhana: `senin.ogg`, `selasa.ogg`, `rabu.ogg`, `kamis.ogg`, `jumat.ogg`, `sabtu.ogg`, dan `minggu.ogg`. Semua aset dikonversi ke **Opus mono 48 kHz** agar dikirim sebagai voice note WhatsApp. Bagian paling bawah pesan teks jadwal memuat:
 
 ```text
 *JIKA TERDAPAT KESALAHAN PADA JADWAL HUBUNGIN NOMOR DARURAT*🗿😅*
