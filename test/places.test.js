@@ -46,7 +46,24 @@ const {
   getAutoLinkCacheKey,
   formatAutomaticLinkWarning,
   isAutoLinkScanGroup,
+  parseMusicCommand,
+  formatMusicSelection,
+  formatMusicTooLongMessage,
 } = require("../index");
+
+test("mem-parsing command musik dan membuat menu pilihan", () => {
+  assert.deepEqual(parseMusicCommand("!musik relaxing piano"), { query: "relaxing piano", error: "" });
+  assert.deepEqual(parseMusicCommand("!musik"), { query: "", error: "empty" });
+  assert.equal(parseMusicCommand("musik relaxing"), null);
+  const menu = formatMusicSelection([
+    { name: "Musik A", artist: "Artis A" },
+    { name: "Musik B", artist: "Artis B" },
+  ]);
+  assert.match(menu, /\[1\] Musik A — Artis A/);
+  assert.match(menu, /\[2\] Musik B — Artis B/);
+  assert.match(menu, /\[0\] BATALKAN/);
+  assert.match(formatMusicTooLongMessage(), /musik melebihi batas \(5 menit\)/);
+});
 
 test("membaca link, command ceklink, dan hasil pemeriksaan keamanan", () => {
   assert.deepEqual(extractUrls("Baca https://example.com/artikel). dan https://example.org"), [

@@ -39,6 +39,8 @@ Isi `GROQ_API_KEYS` pada `.env` sebelum menjalankan bot. API key dibuat dari [Gr
 | `TAVILY_API_KEY` | Opsional; dipakai untuk fitur pencarian internet. |
 | `VIRUSTOTAL_API_KEY` | Diperlukan untuk `!ceklink` dan pembacaan link otomatis. Dipakai untuk memeriksa URL terhadap deteksi malware/phishing. Simpan hanya di Railway Variables. |
 | `JINA_API_KEY` | Opsional untuk `!ceklink`; dipakai agar Jina Reader mendapat batas akses lebih tinggi saat mengambil teks halaman. |
+| `JAMENDO_CLIENT_ID` | Diperlukan untuk `!musik`; digunakan untuk mencari musik dari katalog Jamendo. Simpan hanya di Railway Variables. |
+| `WEEKEND_AUDIO_SATURDAY_URL` / `WEEKEND_AUDIO_SUNDAY_URL` | Opsional; URL file audio langsung untuk voice note akhir pekan pukul 07.00 WIB. Musik maksimal 2 menit. |
 | `GEOAPIFY_API_KEY` | Opsional; dipakai oleh `!tempat`. Buat key gratis di [Geoapify MyProjects](https://myprojects.geoapify.com/), lalu simpan hanya di Railway Variables. |
 | `PREFIX` | Awalan perintah bot; default `!`. |
 
@@ -76,6 +78,26 @@ Pesan biasa yang mengandung URL pada grup jadwal aktif akan diproses otomatis ta
 Hasil pemeriksaan otomatis disimpan sebagai cache sementara selama 24 jam agar URL yang sama tidak memakan request VirusTotal berulang. Cache otomatis dibersihkan setiap pukul **00.30 WIB** dan tidak menyentuh `memory.json`, `auth_info`, kuota, status jadwal, maupun profil. Link dengan command manual tetap memakai alur VirusTotal → Jina Reader → Groq, dengan maksimal **5.000 karakter total** dari teks halaman ke Groq. Konteks riwayat untuk analisis link dan panjang jawaban juga dibatasi agar tidak melewati batas token model. **Hasil “belum terdeteksi” bukan jaminan mutlak bahwa sebuah URL aman.** Jangan kirim URL yang mengandung token login, reset password, undangan privat, atau data pribadi karena URL tersebut dikirim ke layanan pihak ketiga.
 
 VirusTotal Public API mempunyai batas penggunaan dan aturan penggunaan produk. Untuk detailnya, lihat [dokumentasi VirusTotal Public API](https://docs.virustotal.com/reference/public-vs-premium-api). Jina Reader dapat dibaca melalui [dokumentasi resmi Jina Reader](https://jina.ai/reader/). API key tidak pernah dicetak ke chat, log, atau repository.
+
+## Mencari Musik
+
+Command `!musik [nama atau kata kunci]` mencari musik dari katalog Jamendo. Jika hanya ada satu hasil yang cocok, bot langsung mengunduhnya sementara, mengubahnya menjadi Ogg/Opus, dan mengirimkannya sebagai voice note. Jika ada beberapa hasil, bot menampilkan maksimal lima pilihan:
+
+```text
+!musik relaxing piano
+
+[1] Judul Musik A — Nama Artis
+[2] Judul Musik B — Nama Artis
+[0] BATALKAN
+
+Balas pesan ini dengan nomor seperti 1 atau 2.
+```
+
+Balasan nomor harus berupa reply terhadap pesan daftar. Audio yang melebihi **5 menit** ditolak dengan pesan `musik melebihi batas (5 menit)`. File audio hasil unduhan disimpan sementara di Volume Railway, dikirim, lalu dihapus; file tidak disimpan di GitHub. Jamendo memerlukan `JAMENDO_CLIENT_ID` dari [Jamendo Developer Portal](https://developer.jamendo.com/v3.0). Gunakan musik yang lisensinya sesuai dengan kebutuhan dan jangan mengandalkan pencarian lagu berhak cipta tanpa izin.
+
+## Audio Akhir Pekan
+
+Jika `WEEKEND_AUDIO_SATURDAY_URL` dan `WEEKEND_AUDIO_SUNDAY_URL` diisi dengan URL file audio langsung, bot mengunduh dan mengirim voice note satu kali pada pukul **07.00 WIB** di hari yang sesuai. Musik akhir pekan dibatasi maksimal **2 menit**, dikonversi ke Ogg/Opus, lalu file sementara dihapus setelah berhasil dikirim. Status pengiriman disimpan agar restart bot tidak mengirim ulang pada tanggal yang sama.
 
 ## Mencari Tempat dan Mengirim Lokasi
 
