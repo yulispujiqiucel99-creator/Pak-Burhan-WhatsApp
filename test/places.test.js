@@ -30,6 +30,7 @@ const {
   parseScheduleActivationCommand,
   parseNaturalScheduleRequest,
   formatClassScheduleMessage,
+  getClassScheduleAudioPath,
   formatClassScheduleDate,
   isClassScheduleDeliveryTime,
   normalizePlaceFeature,
@@ -240,6 +241,13 @@ test("membuat satu pesan informasi Senin berisi seragam, pelajaran, dan dua pike
 test("menampilkan pesan libur pada Sabtu dan Minggu", () => {
   assert.match(formatClassScheduleMessage("sabtu"), /Hari ini libur/);
   assert.match(formatClassScheduleMessage("minggu"), /Hari ini libur/);
+});
+
+test("menemukan audio jadwal untuk setiap hari sekolah", () => {
+  for (const dayKey of ["senin", "selasa", "rabu", "kamis", "jumat"]) {
+    assert.match(getClassScheduleAudioPath(dayKey), new RegExp(`${dayKey}\\.ogg$`));
+  }
+  assert.equal(getClassScheduleAudioPath("sabtu"), null);
 });
 
 test("membaca hari jadwal dan hanya mengirim pada pukul 17.00 atau 20.00 WIB", () => {

@@ -62,6 +62,13 @@ const GROUP_REST_END_MINUTES = 4 * 60;
 const GROUP_REST_MESSAGE = "akhirnya tugas saya selesai wah udh larut malam saya harus tidur secepatnya buat murid murid saya, hmm... ok alarm 04.00 udh saya jadwal buat persiapan💤😴";
 const CLASS_SCHEDULE_DELIVERY_MINUTES = new Set([17 * 60, 20 * 60]);
 const CLASS_UNIFORM_TEXT = "memakai seragam sekolah lama";
+const CLASS_SCHEDULE_AUDIO_DIR = path.join(__dirname, "assets", "schedule-audio");
+const CLASS_SCHEDULE_AUDIO_FILES = Object.fromEntries(
+  ["senin", "selasa", "rabu", "kamis", "jumat"].map((dayKey) => [
+    dayKey,
+    path.join(CLASS_SCHEDULE_AUDIO_DIR, `${dayKey}.ogg`),
+  ])
+);
 
 const CLASS_WEEKLY_SCHEDULE = {
   senin: {
@@ -1311,6 +1318,11 @@ function formatClassScheduleDate(date = new Date()) {
   }
 }
 
+function getClassScheduleAudioPath(dayKey) {
+  const audioPath = CLASS_SCHEDULE_AUDIO_FILES[dayKey];
+  return audioPath && fs.existsSync(audioPath) ? audioPath : null;
+}
+
 function formatClassScheduleMessage(dayKey, date = new Date()) {
   const schedule = CLASS_WEEKLY_SCHEDULE[dayKey];
   const label = schedule?.label || (dayKey === "sabtu" ? "Sabtu" : "Minggu");
@@ -1414,7 +1426,16 @@ async function sendClassSchedule(sock, date = new Date()) {
   if (BOT_STATE.lastClassScheduleDeliveryKey === deliveryKey) return false;
 
   const dayKey = getClassScheduleDayKey(date);
-  await sock.sendMessage(BOT_STATE.classScheduleGroupJid, { text: formatClassScheduleMessage(dayKey) });
+  const groupJid = BOT_STATE.classScheduleGroupJid;
+  const audioPath = getClassScheduleAudioPath(dayKey);
+  if (audioPath) {
+    await sock.sendMessage(groupJid, {
+      audio: fs.readFileSync(audioPath),
+      mimetype: "audio/ogg; codecs=opus",
+      ptt: true,
+    });
+  }
+  await sock.sendMessage(groupJid, { text: formatClassScheduleMessage(dayKey) });
   BOT_STATE.lastClassScheduleDeliveryKey = deliveryKey;
   saveBotState();
   console.log(`Jadwal kelas terkirim ke grup aktif pada ${deliveryKey}.`);
@@ -2040,6 +2061,7 @@ module.exports = {
   parseScheduleActivationCommand,
   parseNaturalScheduleRequest,
   formatClassScheduleMessage,
+  getClassScheduleAudioPath,
   formatClassScheduleDate,
   isClassScheduleDeliveryTime,
   normalizePlaceFeature,
