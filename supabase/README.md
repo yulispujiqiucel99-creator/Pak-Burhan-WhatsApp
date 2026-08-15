@@ -1,43 +1,45 @@
-# Pengaturan Bot di Supabase
+# Profil Pengguna di Supabase
 
-Bot mengambil pengaturan yang dapat diedit dari satu baris `public.bot_settings` dengan ID `default`. Pengaturan diperbarui otomatis paling lambat sekitar satu menit setelah Anda menyimpan perubahan di Supabase.
+Bot Pak Burhan menggunakan Supabase hanya untuk menyimpan data kecil profil pengguna. Pengaturan perilaku bot, daftar perintah, model Groq, zona waktu, dan aturan mention sekarang berada di kode GitHub agar perubahan dapat ditinjau melalui commit.
 
 ## Persiapan sekali saja
 
-Buka **Supabase Dashboard → SQL Editor**, lalu jalankan seluruh isi file [`bot_settings.sql`](./bot_settings.sql). File tersebut membuat tabel, data awal, dan trigger pembaruan waktu.
+Buka **Supabase Dashboard → SQL Editor**, lalu jalankan seluruh isi file [`migrate_to_profiles.sql`](./migrate_to_profiles.sql). Migrasi tersebut membuat tabel `public.profiles` dan menghapus tabel lama `public.bot_settings` sesuai keputusan proyek.
 
-Setelah itu, buka **Railway → Variables** dan tambahkan dua koneksi satu kali berikut. Nilainya jangan disimpan di GitHub.
+> Perintah `drop table if exists public.bot_settings;` bersifat destruktif. Pastikan Anda memang tidak lagi membutuhkan data konfigurasi lama sebelum menekan Run.
+
+Setelah itu, buka **Railway → Variables** dan pastikan dua koneksi berikut tersedia. Nilainya jangan disimpan di GitHub atau dikirim melalui chat.
 
 ```env
 SUPABASE_URL=https://project-ref.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=service_role_key_anda
 ```
 
-Gunakan key `service_role` dari **Supabase Dashboard → Project Settings → API**. Key ini hanya dipakai oleh bot di Railway dan tidak boleh dibagikan atau dipakai pada aplikasi publik.
+Gunakan key `service_role` dari **Supabase Dashboard → Project Settings → API**. Key ini hanya dipakai oleh bot di Railway dan tidak boleh dibagikan atau digunakan pada aplikasi publik.
 
-## Mengedit pengaturan
+## Struktur tabel `profiles`
 
-Buka **Supabase Dashboard → Table Editor → bot_settings → baris `default`**, lalu edit kolom `settings`. Kolom tersebut berupa JSON.
-
-| Field JSON | Fungsi |
+| Kolom | Fungsi |
 |---|---|
-| `bot_name` | Nama bot yang digunakan pada jawaban dan `!help`. |
-| `timezone` | Zona waktu, misalnya `Asia/Jakarta`. |
-| `private_allowed_lid` | LID satu-satunya yang boleh chat privat dengan bot. |
-| `groq_model` | Model Groq aktif. |
-| `max_history_turns` | Banyaknya putaran riwayat yang dikirim ke AI; nilai 1–12. |
-| `mass_mention_terms` | Kata mention massal yang membuat bot diam di grup. |
-| `commands` | Daftar perintah yang ditampilkan oleh `!help`. |
+| `lid` | Identitas WhatsApp LID pengguna dan primary key. |
+| `name` | Nama panggilan pengguna. |
+| `gender` | Nilai `male` atau `female` untuk menentukan panggilan Mas/Mbak. |
+| `created_at` | Waktu profil dibuat. |
+| `updated_at` | Waktu profil terakhir diperbarui. |
 
-Setiap item dalam `commands` memakai format berikut:
+Saat pengguna pertama kali mengirim nama dan gender, bot menyimpan profil ke Supabase. Profil juga disalin ke cache lokal agar bot tetap dapat memakai data terakhir ketika Supabase sementara tidak tersedia. Perintah `!profil ulang` atau `!reset profil` menghapus profil dari cache lokal dan Supabase.
 
-```json
-{
-  "command": "!perintah",
-  "description": "Penjelasan singkat perintah."
-}
-```
+Data profil tidak dibuka melalui anon key karena tabel menggunakan Row Level Security tanpa policy publik. Bot mengaksesnya memakai `SUPABASE_SERVICE_ROLE_KEY` dari Railway.
 
-Setelah perubahan disimpan, kirim `!help` ke bot untuk melihat daftar terbaru. Untuk perubahan kode yang benar-benar menambah perilaku baru, daftar `commands` pada Supabase dan katalog perintah di kode harus diperbarui bersamaan.
+## Data yang tetap berada di kode
 
-> Jangan menyimpan `GROQ_API_KEYS`, `GROQ_API_KEY`, `GEOAPIFY_API_KEY`, atau key rahasia lain di tabel `bot_settings`. Simpan key rahasia tetap sebagai Railway Variable. Perintah inti baru seperti `!tempat` otomatis tetap muncul pada `!help` setelah kode bot diperbarui; untuk instalasi baru, entri tersebut sudah ada di `bot_settings.sql`.
+Nilai berikut tetap dikelola melalui kode dan environment Railway, bukan tabel Supabase:
+
+- daftar perintah dan isi `!help`;
+- model Groq dan API key;
+- zona waktu WIB;
+- LID privat yang diizinkan;
+- kata mention massal;
+- jadwal kelas, piket, MBG, audio, kuota, dan state jadwal.
+
+Jangan menyimpan `GROQ_API_KEYS`, `GROQ_API_KEY`, `GEOAPIFY_API_KEY`, atau key rahasia lain di Supabase.

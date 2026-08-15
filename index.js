@@ -243,30 +243,71 @@ function normaliseBotSettings(rawSettings) {
   };
 }
 
-async function refreshBotSettings(force = false) {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return BOT_SETTINGS;
-  if (!force && Date.now() - lastSettingsRefresh < SETTINGS_REFRESH_MS) return BOT_SETTINGS;
+async function refreshBotSettings() {
+  // Pengaturan bot sekarang berasal dari kode/GitHub. Supabase hanya menyimpan profil pengguna.
+  return BOT_SETTINGS;
+}
 
+function supabaseHeaders(prefer = "") {
+  return {
+    apikey: SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    ...(prefer ? { Prefer: prefer } : {}),
+  };
+}
+
+async function loadProfileFromSupabase(lid, profileId) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !lid) return PROFILES[profileId] || null;
   try {
-    const { data } = await axios.get(`${SUPABASE_URL}/rest/v1/bot_settings`, {
-      params: { select: "settings", id: "eq.default", limit: 1 },
-      headers: {
-        apikey: SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      },
+    const { data } = await axios.get(`${SUPABASE_URL}/rest/v1/profiles`, {
+      params: { select: "lid,name,gender", lid: `eq.${lid}`, limit: 1 },
+      headers: supabaseHeaders(),
       timeout: 10000,
     });
-    if (Array.isArray(data) && data[0]?.settings) {
-      BOT_SETTINGS = normaliseBotSettings(data[0].settings);
-      console.log("Pengaturan bot diperbarui dari Supabase.");
+    const remote = Array.isArray(data) ? data[0] : null;
+    if (remote?.name && remote?.gender) {
+      PROFILES[profileId] = { name: remote.name, gender: remote.gender };
+      saveProfiles();
+      return PROFILES[profileId];
     }
   } catch (error) {
-    const status = error.response?.status || "-";
-    console.warn(`Gagal memuat pengaturan Supabase (${status}); memakai pengaturan terakhir.`);
-  } finally {
-    lastSettingsRefresh = Date.now();
+    console.warn(`Gagal memuat profil Supabase (${error.response?.status || "-"}); memakai profil lokal.`);
   }
-  return BOT_SETTINGS;
+  return PROFILES[profileId] || null;
+}
+
+async function saveProfileToSupabase(lid, profile) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !lid || !profile?.name || !profile?.gender) return false;
+  try {
+    await axios.post(
+      `${SUPABASE_URL}/rest/v1/profiles`,
+      { lid: String(lid), name: profile.name, gender: profile.gender },
+      {
+        params: { on_conflict: "lid" },
+        headers: supabaseHeaders("resolution=merge-duplicates,return=minimal"),
+        timeout: 10000,
+      }
+    );
+    return true;
+  } catch (error) {
+    console.warn(`Gagal menyimpan profil Supabase (${error.response?.status || "-"}); profil lokal tetap dipakai.`);
+    return false;
+  }
+}
+
+async function deleteProfileFromSupabase(lid) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !lid) return false;
+  try {
+    await axios.delete(`${SUPABASE_URL}/rest/v1/profiles`, {
+      params: { lid: `eq.${lid}` },
+      headers: supabaseHeaders(),
+      timeout: 10000,
+    });
+    return true;
+  } catch (error) {
+    console.warn(`Gagal menghapus profil Supabase (${error.response?.status || "-"}).`);
+    return false;
+  }
 }
 
 function buildHelpText() {
@@ -563,8 +604,8 @@ function getTimeReply(profile) {
   return `${getProfileGreeting(profile)}, sekarang ${getCurrentDateTime()}. ⏰`;
 }
 
-function processProfileOnboarding(profileId, text) {
-  const existing = PROFILES[profileId];
+async function processProfileOnboarding(profileId, lid, text) {
+  const existing = await loadProfileFromSupabase(lid, profileId);
   if (existing?.name && existing?.gender) {
     return { ready: true, profile: existing };
   }
@@ -601,6 +642,7 @@ function processProfileOnboarding(profileId, text) {
   }
 
   const profile = PROFILES[profileId];
+  await saveProfileToSupabase(lid, profile);
   return {
     ready: false,
     reply: `Terima kasih, ${getProfileGreeting(profile)}. Sekarang kamu boleh kirim pertanyaan untuk Pak Burhan ya.`,
@@ -1714,6 +1756,7 @@ async function handleMessage(sock, msg) {
       delete MEMORY[conversationId];
       markDirty();
       saveProfiles();
+      await deleteProfileFromSupabase(senderId);
       await sock.sendMessage(
         jid,
         { text: "Profil sudah dihapus. Tulis nama kamu terlebih dahulu ya, misalnya: Naufal." },
@@ -1722,7 +1765,7 @@ async function handleMessage(sock, msg) {
       return;
     }
 
-    const onboarding = processProfileOnboarding(profileId, text);
+    const onboarding = await processProfileOnboarding(profileId, senderId, text);
     if (!onboarding.ready) {
       await sock.sendMessage(jid, { text: onboarding.reply }, { quoted: msg });
       return;

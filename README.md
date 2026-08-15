@@ -30,23 +30,23 @@ Isi `GROQ_API_KEYS` pada `.env` sebelum menjalankan bot. API key dibuat dari [Gr
 | `BOT_NUMBER` | Wajib untuk metode `pairing`; gunakan format `628...`. |
 | `GROQ_API_KEYS` | Satu atau beberapa API key Groq, dipisahkan koma. Saat error 429, bot mencoba key berikutnya secara otomatis. |
 | `GROQ_API_KEY` | Kompatibilitas untuk konfigurasi lama dengan satu key; lebih disarankan memakai `GROQ_API_KEYS`. |
-| `GROQ_MODEL` | Fallback model `openai/gpt-oss-120b`; setelah Supabase aktif, model diedit pada kolom `settings.groq_model`. |
+| `GROQ_MODEL` | Model fallback yang dibaca dari kode; saat ini bot tetap memakai `llama-3.1-8b-instant` dari konfigurasi aktif. |
 | `GROQ_BASE_URL` | Default `https://api.groq.com/openai/v1`; biasanya tidak perlu diubah. |
-| `SUPABASE_URL` | URL proyek Supabase yang menyimpan pengaturan bot. |
+| `SUPABASE_URL` | URL proyek Supabase yang menyimpan profil pengguna. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service-role key Supabase untuk bot di Railway; rahasia dan tidak boleh dibagikan. |
-| `PRIVATE_ALLOWED_LID` | Fallback LID privat jika Supabase belum aktif; setelah aktif, edit `private_allowed_lid` di Supabase. |
-| `BOT_TIMEZONE` | Fallback zona waktu; setelah Supabase aktif, edit `timezone` di Supabase. |
+| `PRIVATE_ALLOWED_LID` | LID privat yang diizinkan; dikelola dari Railway Variables dan kode. |
+| `BOT_TIMEZONE` | Zona waktu bot; default `Asia/Jakarta` dan dikelola dari Railway Variables/kode. |
 | `TAVILY_API_KEY` | Opsional; dipakai untuk fitur pencarian internet. |
 | `GEOAPIFY_API_KEY` | Opsional; dipakai oleh `!tempat`. Buat key gratis di [Geoapify MyProjects](https://myprojects.geoapify.com/), lalu simpan hanya di Railway Variables. |
 | `PREFIX` | Awalan perintah bot; default `!`. |
 
-## Pengaturan yang Dapat Diedit
+## Penyimpanan Profil di Supabase
 
-Pengaturan seperti nama bot, zona waktu, LID privat, model Groq, batas riwayat, mention massal, dan daftar `!help` dapat dikelola dari Supabase. Rekomendasi model saat ini adalah `openai/gpt-oss-120b`; bot memakai reasoning tingkat sedang dan menyembunyikan reasoning internal agar jawaban lebih teliti tanpa menampilkan proses berpikir ke pengguna. Jalankan migrasi lalu ikuti panduan di [`supabase/README.md`](./supabase/README.md). Railway hanya menyimpan koneksi rahasia satu kali ke Supabase; perubahan pengaturan harian dilakukan dari dashboard Supabase.
+Supabase sekarang dipakai untuk menyimpan data kecil profil pengguna pada tabel `profiles`: LID, nama, gender, dan waktu pembaruan. Pengaturan perilaku bot, model Groq, zona waktu, LID privat, daftar command, jadwal, dan aturan mention tetap berada di kode atau Railway Variables. Jalankan migrasi dan ikuti panduan di [`supabase/README.md`](./supabase/README.md).
 
 ## Deployment Railway
 
-Hubungkan repository ini ke Railway, lalu isi seluruh variabel lingkungan yang diperlukan. Untuk penggunaan normal setelah migrasi, tambahkan `SUPABASE_URL` dan `SUPABASE_SERVICE_ROLE_KEY` satu kali; pengaturan seperti LID privat dan zona waktu selanjutnya diedit dari Supabase. Tambahkan **Volume** dengan titik mount `/app` agar folder `auth_info` dan `data` tetap tersimpan setelah deployment atau restart. Jalankan bot dengan perintah `node index.js`, atau gunakan Procfile worker yang tersedia.
+Hubungkan repository ini ke Railway, lalu isi seluruh variabel lingkungan yang diperlukan. Untuk penggunaan profil, tambahkan `SUPABASE_URL` dan `SUPABASE_SERVICE_ROLE_KEY` satu kali. Tambahkan **Volume** dengan titik mount `/app` agar folder `auth_info` dan `data` tetap tersimpan setelah deployment atau restart. Jalankan bot dengan perintah `node index.js`, atau gunakan Procfile worker yang tersedia.
 
 Setelah deployment, buka menu **Logs** Railway. Jika `AUTH_METHOD=qr`, log akan menampilkan tautan QR. Buka tautan tersebut, lalu pindai QR melalui WhatsApp pada menu **Perangkat Tertaut**. Jika menggunakan pairing, atur `BOT_NUMBER` dan masukkan kode pairing yang muncul di log. Di grup, gunakan format seperti **`@Pak Burhan jadwal ulangan kapan?`**; mention tanpa pertanyaan akan dibalas dengan contoh format yang benar. Pada interaksi pertama, bot akan meminta **nama** dan **gender**; pertanyaan AI baru diproses setelah kedua data tersebut diberikan agar panggilannya tidak keliru. Jika nama atau gender pernah tersimpan salah, kirim **`!profil ulang`** agar bot menghapus profil dan meminta data kembali.
 
