@@ -62,6 +62,7 @@ const GROUP_REST_END_MINUTES = 4 * 60;
 const GROUP_REST_MESSAGE = "akhirnya tugas saya selesai wah udh larut malam saya harus tidur secepatnya buat murid murid saya, hmm... ok alarm 04.00 udh saya jadwal buat persiapan💤😴";
 const CLASS_SCHEDULE_DELIVERY_MINUTES = new Set([17 * 60, 20 * 60]);
 const CLASS_UNIFORM_TEXT = "memakai seragam sekolah lama";
+const CLASS_SCHEDULE_FOOTER = "*JIKA TERDAPAT KESALAHAN PADA JADWAL HUBUNGIN NOMOR DARURAT*🗿😅*";
 const CLASS_SCHEDULE_AUDIO_DIR = path.join(__dirname, "assets", "schedule-audio");
 const CLASS_SCHEDULE_AUDIO_FILES = Object.fromEntries(
   ["senin", "selasa", "rabu", "kamis", "jumat"].map((dayKey) => [
@@ -1328,7 +1329,7 @@ function formatClassScheduleMessage(dayKey, date = new Date()) {
   const label = schedule?.label || (dayKey === "sabtu" ? "Sabtu" : "Minggu");
   const header = `*INFORMASI ${label.toUpperCase()}*\n_${formatClassScheduleDate(date)}_`;
   if (!schedule) {
-    return `${header}\n\n🏖️ Libur\nHari ini libur. Selamat beristirahat dan siapkan diri untuk sekolah berikutnya. 🙂`;
+    return `${header}\n\n🏖️ Libur\nHari ini libur. Selamat beristirahat dan siapkan diri untuk sekolah berikutnya. 🙂\n\n${CLASS_SCHEDULE_FOOTER}`;
   }
 
   const lessons = schedule.lessons.map((lesson) => `- ${lesson}`).join("\n");
@@ -1350,7 +1351,26 @@ function formatClassScheduleMessage(dayKey, date = new Date()) {
     "🍴 Piket MBG",
     `*${label.toUpperCase()}*`,
     mbgDuty,
+    "",
+    CLASS_SCHEDULE_FOOTER,
   ].join("\n");
+}
+
+async function sendClassScheduleContent(sock, jid, dayKey, date = new Date(), { includeAudio = false, quoted = null } = {}) {
+  const sendOptions = quoted ? { quoted } : undefined;
+  const audioPath = includeAudio ? getClassScheduleAudioPath(dayKey) : null;
+  if (audioPath) {
+    await sock.sendMessage(
+      jid,
+      {
+        audio: fs.readFileSync(audioPath),
+        mimetype: "audio/ogg; codecs=opus",
+        ptt: true,
+      },
+      sendOptions
+    );
+  }
+  await sock.sendMessage(jid, { text: formatClassScheduleMessage(dayKey, date) }, sendOptions);
 }
 
 function parseClassScheduleDay(text, date = new Date()) {
@@ -1427,15 +1447,7 @@ async function sendClassSchedule(sock, date = new Date()) {
 
   const dayKey = getClassScheduleDayKey(date);
   const groupJid = BOT_STATE.classScheduleGroupJid;
-  const audioPath = getClassScheduleAudioPath(dayKey);
-  if (audioPath) {
-    await sock.sendMessage(groupJid, {
-      audio: fs.readFileSync(audioPath),
-      mimetype: "audio/ogg; codecs=opus",
-      ptt: true,
-    });
-  }
-  await sock.sendMessage(groupJid, { text: formatClassScheduleMessage(dayKey) });
+  await sendClassScheduleContent(sock, groupJid, dayKey, date, { includeAudio: true });
   BOT_STATE.lastClassScheduleDeliveryKey = deliveryKey;
   saveBotState();
   console.log(`Jadwal kelas terkirim ke grup aktif pada ${deliveryKey}.`);
@@ -1674,7 +1686,7 @@ async function handleMessage(sock, msg) {
         await sock.sendMessage(jid, { text: `Gunakan ${PREFIX}jadwal atau ${PREFIX}jadwal senin sampai ${PREFIX}jadwal minggu.` }, { quoted: msg });
         return;
       }
-      await sock.sendMessage(jid, { text: formatClassScheduleMessage(dayKey) }, { quoted: msg });
+      await sendClassScheduleContent(sock, jid, dayKey, new Date(), { includeAudio: true, quoted: msg });
       return;
     }
 
@@ -2061,6 +2073,7 @@ module.exports = {
   parseScheduleActivationCommand,
   parseNaturalScheduleRequest,
   formatClassScheduleMessage,
+  sendClassScheduleContent,
   getClassScheduleAudioPath,
   formatClassScheduleDate,
   isClassScheduleDeliveryTime,

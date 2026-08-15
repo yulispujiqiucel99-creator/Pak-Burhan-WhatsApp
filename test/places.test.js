@@ -236,6 +236,7 @@ test("membuat satu pesan informasi Senin berisi seragam, pelajaran, dan dua pike
   assert.match(message, /- PAI dan BP/);
   assert.match(message, /🛋️ Piket kelas\n\*SENIN\*\n- Farida\n- Rara/);
   assert.match(message, /🍴 Piket MBG\n\*SENIN\*\n- Farida\n- Nayla\n- Lulu\n- Satria\n- Alby\n- Amanda/);
+  assert.match(message, /\*JIKA TERDAPAT KESALAHAN PADA JADWAL HUBUNGIN NOMOR DARURAT\*🗿😅\*$/);
 });
 
 test("menampilkan pesan libur pada Sabtu dan Minggu", () => {

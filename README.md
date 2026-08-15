@@ -75,11 +75,17 @@ Perintah `!jadwal` menampilkan satu pesan yang memuat daftar pelajaran, piket ke
 
 Bot juga memahami pertanyaan jadwal tanpa perintah, misalnya `Pak, jadwal besok apa?`, `Piket hari ini siapa?`, atau `Pelajaran Senin apa, Pak?`. Bot menentukan hari berdasarkan **WIB** dan menjawab langsung dari data jadwal, sehingga pertanyaan tersebut tidak memakai kuota AI.
 
-Agar pengiriman otomatis tidak masuk ke grup yang keliru dan tidak mengganggu grup, admin mengaktifkannya melalui **DM bot** dengan format **`!aktifkan jadwal [tautan undangan grup]`**. Misalnya: `!aktifkan jadwal https://chat.whatsapp.com/xxxxxxxx`. Bot memeriksa tautan dan memastikan akun bot sudah menjadi anggota grup, tetapi tidak akan bergabung otomatis melalui tautan tersebut. Setelah aktif, bot mengirimkan **voice note jadwal** dan pesan teks kelas pada **17.00 WIB** dan **20.00 WIB** setiap hari. Voice note menggunakan aset Ogg/Opus di `assets/schedule-audio/` untuk Senin sampai Jumat, sedangkan teks tetap dikirim agar daftar pelajaran dan nama petugas mudah dibaca. Pengiriman Sabtu dan Minggu berisi informasi libur tanpa voice note sekolah. Admin dapat menghentikannya dari DM dengan `!nonaktifkan jadwal`.
+Agar pengiriman otomatis tidak masuk ke grup yang keliru dan tidak mengganggu grup, admin mengaktifkannya melalui **DM bot** dengan format **`!aktifkan jadwal [tautan undangan grup]`**. Misalnya: `!aktifkan jadwal https://chat.whatsapp.com/xxxxxxxx`. Bot memeriksa tautan dan memastikan akun bot sudah menjadi anggota grup, tetapi tidak akan bergabung otomatis melalui tautan tersebut. Setelah aktif, bot mengirimkan **voice note jadwal** dan pesan teks kelas pada **17.00 WIB** dan **20.00 WIB** setiap hari. Voice note menggunakan aset Ogg/Opus di `assets/schedule-audio/` untuk Senin sampai Jumat, sedangkan teks tetap dikirim agar daftar pelajaran dan nama petugas mudah dibaca. Perintah manual `!jadwal senin` sampai `!jadwal jumat` juga mengirim voice note sesuai hari, sedangkan Sabtu dan Minggu hanya menampilkan informasi libur. Setiap pesan teks jadwal diakhiri catatan darurat sesuai format yang telah ditetapkan. Admin dapat menghentikannya dari DM dengan `!nonaktifkan jadwal`.
 
 ## Aset Audio Jadwal
 
-Lima aset voice note jadwal disimpan dengan nama hari yang sederhana: `senin.ogg`, `selasa.ogg`, `rabu.ogg`, `kamis.ogg`, dan `jumat.ogg`. Semua aset dikonversi ke **Opus mono 48 kHz** agar dikirim sebagai voice note WhatsApp. File audio tidak memuat API key dan dapat diganti dengan file baru menggunakan nama yang sama, lalu dilakukan commit dan deploy ulang.
+Lima aset voice note jadwal disimpan dengan nama hari yang sederhana: `senin.ogg`, `selasa.ogg`, `rabu.ogg`, `kamis.ogg`, dan `jumat.ogg`. Semua aset dikonversi ke **Opus mono 48 kHz** agar dikirim sebagai voice note WhatsApp. Bagian paling bawah pesan teks jadwal memuat:
+
+```text
+*JIKA TERDAPAT KESALAHAN PADA JADWAL HUBUNGIN NOMOR DARURAT*🗿😅*
+```
+
+File audio tidak memuat API key dan dapat diganti dengan file baru menggunakan nama yang sama, lalu dilakukan commit dan deploy ulang.
 
 ## Memeriksa Kuota dan Status
 
