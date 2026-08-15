@@ -39,7 +39,7 @@ Isi `GROQ_API_KEYS` pada `.env` sebelum menjalankan bot. API key dibuat dari [Gr
 | `TAVILY_API_KEY` | Opsional; dipakai untuk fitur pencarian internet. |
 | `VIRUSTOTAL_API_KEY` | Diperlukan untuk `!ceklink` dan pembacaan link otomatis. Dipakai untuk memeriksa URL terhadap deteksi malware/phishing. Simpan hanya di Railway Variables. |
 | `JINA_API_KEY` | Opsional untuk `!ceklink`; dipakai agar Jina Reader mendapat batas akses lebih tinggi saat mengambil teks halaman. |
-| `WEEKEND_AUDIO_SATURDAY_PATH` / `WEEKEND_AUDIO_SUNDAY_PATH` | Path file audio lokal di Volume Railway untuk voice note akhir pekan pukul 07.00 WIB. Musik maksimal 2 menit. |
+| `WEEKEND_AUDIO_SATURDAY_PATH` / `WEEKEND_AUDIO_SUNDAY_PATH` | Opsional; untuk mengganti path audio. Secara default bot membaca file dari `assets/weekend-audio` di repository. |
 | `GEOAPIFY_API_KEY` | Opsional; dipakai oleh `!tempat`. Buat key gratis di [Geoapify MyProjects](https://myprojects.geoapify.com/), lalu simpan hanya di Railway Variables. |
 | `PREFIX` | Awalan perintah bot; default `!`. |
 
@@ -80,16 +80,14 @@ VirusTotal Public API mempunyai batas penggunaan dan aturan penggunaan produk. U
 
 ## Audio Akhir Pekan
 
-Fitur pencarian musik dan command `!musik` tidak digunakan lagi. Audio akhir pekan memakai dua file lokal yang disimpan di **Volume Railway**, sehingga tidak bergantung pada layanan pencarian musik dan tidak menghabiskan kredit TTS.
-
-Letakkan file berikut di Volume Railway:
+Fitur pencarian musik dan command `!musik` tidak digunakan lagi. Audio akhir pekan memakai dua file lokal yang disimpan di repository GitHub pada folder berikut:
 
 ```text
-/app/data/weekend-audio/sabtu.mp3
-/app/data/weekend-audio/minggu.mp3
+assets/weekend-audio/sabtu.mp3
+assets/weekend-audio/minggu.mp3
 ```
 
-Bot akan mengirim file Sabtu pada pukul **07.00 WIB** hari Sabtu dan file Minggu pada pukul **07.00 WIB** hari Minggu. Setiap file dibatasi maksimal **2 menit**, dikonversi ke Ogg/Opus agar tampil sebagai voice note, lalu hanya file hasil konversi sementara yang dihapus. File sumber tetap disimpan di Volume Railway agar dapat dipakai pada akhir pekan berikutnya. Status pengiriman disimpan agar restart bot tidak mengirim ulang pada tanggal yang sama.
+Bot akan mengirim file Sabtu pada pukul **07.00 WIB** hari Sabtu dan file Minggu pada pukul **07.00 WIB** hari Minggu. Setiap file dibatasi maksimal **2 menit**, dikonversi ke Ogg/Opus agar tampil sebagai voice note, lalu hanya file hasil konversi sementara yang dihapus. File sumber tetap ada di GitHub agar dapat dipakai pada akhir pekan berikutnya. Status pengiriman disimpan agar restart bot tidak mengirim ulang pada tanggal yang sama.
 
 ## Mencari Tempat dan Mengirim Lokasi
 

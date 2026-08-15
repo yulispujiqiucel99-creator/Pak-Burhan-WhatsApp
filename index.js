@@ -49,8 +49,8 @@ const GEOAPIFY_API_KEY = (process.env.GEOAPIFY_API_KEY || "").trim();
 const GROQ_VISION_MODEL = (process.env.GROQ_VISION_MODEL || "qwen/qwen3.6-27b").trim();
 const MAX_VISION_IMAGE_BYTES = 20 * 1024 * 1024;
 const WEEKEND_AUDIO_PATHS = {
-  sabtu: (process.env.WEEKEND_AUDIO_SATURDAY_PATH || path.join(__dirname, "data", "weekend-audio", "sabtu.mp3")).trim(),
-  minggu: (process.env.WEEKEND_AUDIO_SUNDAY_PATH || path.join(__dirname, "data", "weekend-audio", "minggu.mp3")).trim(),
+  sabtu: (process.env.WEEKEND_AUDIO_SATURDAY_PATH || path.join(__dirname, "assets", "weekend-audio", "sabtu.mp3")).trim(),
+  minggu: (process.env.WEEKEND_AUDIO_SUNDAY_PATH || path.join(__dirname, "assets", "weekend-audio", "minggu.mp3")).trim(),
 };
 const WEEKEND_AUDIO_MAX_SECONDS = 2 * 60;
 const PREFIX = process.env.PREFIX || "!";
