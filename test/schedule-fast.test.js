@@ -6,9 +6,21 @@ const {
   formatClassScheduleMessage,
   getClassScheduleAudioPath,
   sendClassScheduleContent,
+  WEEKEND_AUDIO_DELIVERY_MINUTES,
+  isClassScheduleDeliveryTime,
 } = require("../index");
 
 const WEEKEND_DAYS = ["sabtu", "minggu"];
+
+ test("test cepat: audio hari libur dijadwalkan pukul 08.10 WIB", () => {
+  assert.equal(WEEKEND_AUDIO_DELIVERY_MINUTES, 8 * 60 + 10);
+  assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-16T01:10:00.000Z")), false);
+});
+
+test("test cepat: jadwal sekolah tetap pada pukul 17.00 dan 20.00 WIB", () => {
+  assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-16T10:00:00.000Z")), true);
+  assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-16T13:00:00.000Z")), true);
+});
 
 test("test cepat: command Sabtu dan Minggu dikenali", () => {
   assert.equal(parseClassScheduleDay("!jadwal sabtu"), "sabtu");

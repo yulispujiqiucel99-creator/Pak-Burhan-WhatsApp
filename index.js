@@ -59,6 +59,7 @@ const WEEKEND_AUDIO_PATHS = {
   minggu: (process.env.WEEKEND_AUDIO_SUNDAY_PATH || path.join(__dirname, "assets", "weekend-audio", "minggu.mp3")).trim(),
 };
 const WEEKEND_AUDIO_MAX_SECONDS = 2 * 60;
+const WEEKEND_AUDIO_DELIVERY_MINUTES = 8 * 60 + 10;
 const PREFIX = process.env.PREFIX || "!";
 const AUTH_METHOD = (process.env.AUTH_METHOD || "qr").toLowerCase();
 const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
@@ -2178,7 +2179,7 @@ async function prepareWeekendAudio(dayKey) {
 async function sendWeekendAudio(sock, date = new Date()) {
   if (!BOT_STATE.classScheduleGroupJid) return false;
   const { dateKey, hour, minute } = getZonedClockParts(date);
-  if (hour !== 7 || minute !== 0) return false;
+  if (hour * 60 + minute !== WEEKEND_AUDIO_DELIVERY_MINUTES) return false;
   const dayKey = getClassScheduleDayKey(date);
   if (!WEEKEND_AUDIO_PATHS[dayKey]) return false;
   const deliveryKey = `${dateKey}-${dayKey}`;
@@ -2984,6 +2985,7 @@ module.exports = {
   formatClassScheduleMessage,
   sendClassScheduleContent,
   getClassScheduleAudioPath,
+  WEEKEND_AUDIO_DELIVERY_MINUTES,
   formatClassScheduleDate,
   isClassScheduleDeliveryTime,
   normalizePlaceFeature,
