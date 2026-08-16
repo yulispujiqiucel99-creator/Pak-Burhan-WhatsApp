@@ -46,6 +46,7 @@ const {
   getAutoLinkCacheKey,
   formatAutomaticLinkWarning,
   isAutoLinkScanGroup,
+  normalizeGroupJid,
   classifyAutomaticLinkResults,
   buildHelpText,
   isAdminLid,
@@ -71,6 +72,12 @@ test("role admin dan JFR tidak tercampur", () => {
 
 test("!help tidak lagi menampilkan command musik yang sudah dihapus", () => {
   assert.doesNotMatch(buildHelpText(), /!musik|Jamendo/i);
+});
+
+test("menormalkan JID grup untuk pencocokan scanner otomatis", () => {
+  assert.equal(normalizeGroupJid("120363012345678@g.us:1"), "120363012345678@g.us");
+  assert.equal(normalizeGroupJid("120363012345678@g.us"), "120363012345678@g.us");
+  assert.equal(isAutoLinkScanGroup("123@g.us"), false);
 });
 
 test("tidak menganggap pending sebagai link berbahaya otomatis", () => {

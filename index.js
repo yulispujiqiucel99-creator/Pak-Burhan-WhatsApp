@@ -691,6 +691,8 @@ function buildAdminStatusReply(lid, now = Date.now()) {
     `Kuota admin: ${quota.used}/${DAILY_QUESTION_LIMIT} terpakai, ${quota.remaining} tersisa`,
     `Reset kuota admin: ${resetText}`,
     `Grup: ${groupMode}`,
+    `Target jadwal/scanner: ${BOT_STATE.classScheduleGroupJid || "belum ditetapkan"}`,
+    `Pemindai link otomatis: ${BOT_STATE.classScheduleGroupJid ? "aktif pada target jadwal" : "menunggu target grup"}`,
     `Zona waktu: ${BOT_SETTINGS.timezone}`,
   ].join("\n");
 }
@@ -1151,8 +1153,14 @@ async function checkAutomaticUrl(url) {
   return { ...result, cached: false };
 }
 
+function normalizeGroupJid(jid) {
+  return String(jid || "").trim().toLowerCase().split(":")[0];
+}
+
 function isAutoLinkScanGroup(jid) {
-  return Boolean(jid && BOT_STATE.classScheduleGroupJid && jid === BOT_STATE.classScheduleGroupJid);
+  const incoming = normalizeGroupJid(jid);
+  const active = normalizeGroupJid(BOT_STATE.classScheduleGroupJid);
+  return Boolean(incoming && active && incoming === active && incoming.endsWith("@g.us"));
 }
 
 function hasManualLinkCommand(text) {
@@ -3190,6 +3198,7 @@ module.exports = {
   formatAutomaticLinkWarning,
   classifyAutomaticLinkResults,
   isAutoLinkScanGroup,
+  normalizeGroupJid,
   getAudioDurationSeconds,
   getUpcomingScheduleDate,
   buildHelpText,
