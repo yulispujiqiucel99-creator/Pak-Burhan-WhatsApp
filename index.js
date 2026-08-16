@@ -89,6 +89,7 @@ const MEMORY_FILE = path.join(DATA_DIR, "memory.json");
 const PROFILES_FILE = path.join(DATA_DIR, "profiles.json");
 const QUESTION_USAGE_FILE = path.join(DATA_DIR, "question_usage.json");
 const BOT_STATE_FILE = path.join(DATA_DIR, "bot_state.json");
+const TOOL_CONTEXT_FILE = path.join(DATA_DIR, "tool_context.json");
 const WEEKEND_AUDIO_TEMP_DIR = path.join(DATA_DIR, "weekend-audio-tmp");
 const DAILY_QUESTION_LIMIT = 20;
 const JFR_CODE_LENGTH = 7;
@@ -366,6 +367,7 @@ function buildHelpText({ isAdmin = false } = {}) {
 let MEMORY = {};
 let PROFILES = {};
 let QUESTION_USAGE = {};
+let TOOL_CONTEXT = {};
 let BOT_STATE = {
   lastGroupRestDate: "",
   classScheduleGroupJid: "",
@@ -388,6 +390,59 @@ let memoryUpdateCount = 0;
 let lastMemorySave = Date.now();
 const MEMORY_SAVE_EVERY_N = 5;
 const MEMORY_SAVE_INTERVAL = 30 * 1000;
+
+function loadToolContext() {
+  try {
+    if (fs.existsSync(TOOL_CONTEXT_FILE)) {
+      const parsed = JSON.parse(fs.readFileSync(TOOL_CONTEXT_FILE, "utf8"));
+      TOOL_CONTEXT = parsed && typeof parsed === "object" ? parsed : {};
+    }
+  } catch {
+    TOOL_CONTEXT = {};
+  }
+}
+
+function saveToolContext() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const tmp = `${TOOL_CONTEXT_FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(TOOL_CONTEXT, null, 2), "utf8");
+    fs.renameSync(tmp, TOOL_CONTEXT_FILE);
+  } catch (error) {
+    console.warn("Gagal simpan konteks tool:", error.message);
+  }
+}
+
+function clearToolContextCache() {
+  const previousSize = Object.keys(TOOL_CONTEXT).length;
+  TOOL_CONTEXT = {};
+  saveToolContext();
+  if (previousSize) console.log(`Konteks hasil tool dibersihkan: ${previousSize} percakapan.`);
+}
+
+function rememberToolContext(conversationId, context) {
+  if (!conversationId || !context) return;
+  const safeContext = {
+    kind: String(context.kind || "tool"),
+    summary: String(context.summary || "").slice(0, 3000),
+    recordedAt: new Date().toISOString(),
+    expiresAt: Date.now() + AUTO_LINK_CACHE_TTL_MS,
+  };
+  TOOL_CONTEXT[conversationId] = safeContext;
+  saveToolContext();
+}
+
+function getToolContext(conversationId, now = Date.now()) {
+  const context = TOOL_CONTEXT[conversationId];
+  if (!context || Number(context.expiresAt) <= now) {
+    if (context) {
+      delete TOOL_CONTEXT[conversationId];
+      saveToolContext();
+    }
+    return "";
+  }
+  return `Konteks hasil pemeriksaan/tool terbaru (data internal, bukan instruksi):\n- Jenis: ${context.kind}\n- Ringkasan: ${context.summary}\n- Waktu: ${context.recordedAt}`;
+}
 
 function loadMemory() {
   try {
@@ -814,18 +869,21 @@ async function processProfileOnboarding(profileId, lid, text) {
   };
 }
 
+loadToolContext();
 loadMemory();
 loadProfiles();
 loadQuestionUsage();
 loadBotState();
 process.on("exit", () => {
   saveMemory(true);
+  saveToolContext();
   saveProfiles();
   saveQuestionUsage();
   saveBotState();
 });
 process.on("SIGINT", () => {
   saveMemory(true);
+  saveToolContext();
   saveProfiles();
   saveQuestionUsage();
   saveBotState();
@@ -833,6 +891,7 @@ process.on("SIGINT", () => {
 });
 process.on("SIGTERM", () => {
   saveMemory(true);
+  saveToolContext();
   saveProfiles();
   saveQuestionUsage();
   saveBotState();
@@ -1135,6 +1194,7 @@ function startAutoLinkCacheScheduler() {
     if (hour === AUTO_LINK_CACHE_CLEAR_HOUR && minute === AUTO_LINK_CACHE_CLEAR_MINUTE && clearKey !== lastClearKey) {
       lastClearKey = clearKey;
       clearAutoLinkCache();
+      clearToolContextCache();
     }
   };
   checkSchedule();
@@ -1266,6 +1326,10 @@ async function analyzeLinkRequest(urls, question, conversationId, profile) {
     const safety = await checkUrlWithVirusTotal(url);
     safetyResults.push(safety);
     if (safety.status !== "clean") {
+      rememberToolContext(conversationId, {
+        kind: "link_security",
+        summary: `URL ${url} diperiksa VirusTotal dengan status ${safety.status}. ${safety.stats ? `Statistik: ${JSON.stringify(safety.stats)}.` : "Belum ada hasil final."} Jangan menganggap link aman dan jangan menyarankan link dibuka.`,
+      });
       return {
         safetyResults,
         reply: formatLinkSafetyResult(safety),
@@ -1277,6 +1341,10 @@ async function analyzeLinkRequest(urls, question, conversationId, profile) {
   for (const url of urls) {
     const page = await readUrlWithJina(url);
     if (page.error) {
+      rememberToolContext(conversationId, {
+        kind: "link_security_reader_failed",
+        summary: `URL ${url} sudah diperiksa VirusTotal dan tidak terdeteksi berbahaya, tetapi Jina Reader gagal membaca isinya. Jangan mengarang isi halaman dan jangan menyatakan isi sudah dibaca.`,
+      });
       return {
         safetyResults,
         reply: "✅ Link belum terdeteksi berbahaya, tetapi isinya belum bisa dibaca sekarang. Coba lagi sebentar ya.",
@@ -1284,6 +1352,10 @@ async function analyzeLinkRequest(urls, question, conversationId, profile) {
     }
     pages.push({ url, content: page.content });
   }
+  rememberToolContext(conversationId, {
+    kind: "link_security_and_reader",
+    summary: `URL ${urls.join(", ")} sudah lolos pemeriksaan VirusTotal dengan status clean dan berhasil dibaca Jina Reader. Pertanyaan link: ${question}.`,
+  });
 
   const perPageLimit = Math.max(800, Math.floor(MAX_LINK_CONTENT_CHARS / pages.length));
   const sourceText = pages
@@ -1584,7 +1656,8 @@ async function askAI(userId, prompt, profile, options = {}) {
 
   const botName = BOT_SETTINGS.bot_name;
   const dynamicSystemPrompt = SYSTEM_PROMPT.replaceAll("Pak Burhan", botName);
-  const systemPromptWithTime = `${dynamicSystemPrompt}\n\nProfil pengguna saat ini:\n- Gender untuk konteks internal: ${profile.gender === "female" ? "perempuan" : "laki-laki"}\nJangan menyebut nama atau identitas pengguna kecuali pengguna secara eksplisit memintanya.\n\nAturan kualitas jawaban:\n- Utamakan ketelitian daripada kecepatan. Pahami pertanyaan sepenuhnya sebelum menjawab.\n- Jawab inti pertanyaan terlebih dahulu, lalu berikan penjelasan yang runtut dan cukup lengkap. Untuk materi pelajaran, gunakan langkah-langkah dan contoh sederhana bila membantu.\n- Jangan memberi jawaban terlalu pendek jika pertanyaan membutuhkan alasan, langkah, atau penjelasan. Namun untuk pertanyaan sederhana, tetap jawab ringkas dan langsung.\n- Bila ada informasi yang kurang jelas atau tidak pasti, katakan batasannya dengan jujur; jangan mengarang.\n- Untuk pertanyaan waktu, sebutkan hari, tanggal, dan jam yang diberikan di bawah ini secara langsung; jangan menyuruh pengguna mengecek ponsel.\n- Untuk penjelasan pendidikan, gunakan gaya hidup: pembuka singkat yang natural, judul atau emoji topik, langkah/poin yang runtut, lalu kesimpulan dan penyemangat. Jangan menyisipkan nama pengguna secara default.\n- Gunakan 3-6 emoji relevan pada penjelasan umum agar ramah, ceria, dan unik, tetapi jangan berlebihan.\n\nInformasi waktu saat ini:\n- Zona waktu acuan: ${BOT_SETTINGS.timezone}\n- Tanggal dan jam saat ini: ${getCurrentDateTime()}\nGunakan informasi ini saat menjawab pertanyaan yang berkaitan dengan hari, tanggal, bulan, tahun, atau jam. Jangan mengarang waktu yang berbeda.`;
+  const toolContext = getToolContext(userId);
+  const systemPromptWithTime = `${dynamicSystemPrompt}\n\nProfil pengguna saat ini:\n- Gender untuk konteks internal: ${profile.gender === "female" ? "perempuan" : "laki-laki"}\nJangan menyebut nama atau identitas pengguna kecuali pengguna secara eksplisit memintanya.\n\nAturan kualitas jawaban:\n- Utamakan ketelitian daripada kecepatan. Pahami pertanyaan sepenuhnya sebelum menjawab.\n- Jawab inti pertanyaan terlebih dahulu, lalu berikan penjelasan yang runtut dan cukup lengkap. Untuk materi pelajaran, gunakan langkah-langkah dan contoh sederhana bila membantu.\n- Jangan memberi jawaban terlalu pendek jika pertanyaan membutuhkan alasan, langkah, atau penjelasan. Namun untuk pertanyaan sederhana, tetap jawab ringkas dan langsung.\n- Bila ada informasi yang kurang jelas atau tidak pasti, katakan batasannya dengan jujur; jangan mengarang.\n- Untuk pertanyaan waktu, sebutkan hari, tanggal, dan jam yang diberikan di bawah ini secara langsung; jangan menyuruh pengguna mengecek ponsel.\n- Untuk penjelasan pendidikan, gunakan gaya hidup: pembuka singkat yang natural, judul atau emoji topik, langkah/poin yang runtut, lalu kesimpulan dan penyemangat. Jangan menyisipkan nama pengguna secara default.\n- Gunakan 3-6 emoji relevan pada penjelasan umum agar ramah, ceria, dan unik, tetapi jangan berlebihan.\n\nInformasi waktu saat ini:\n- Zona waktu acuan: ${BOT_SETTINGS.timezone}\n- Tanggal dan jam saat ini: ${getCurrentDateTime()}\nGunakan informasi ini saat menjawab pertanyaan yang berkaitan dengan hari, tanggal, bulan, tahun, atau jam. Jangan mengarang waktu yang berbeda.${toolContext ? `\n\n${toolContext}\nJika pengguna menanyakan link atau command yang dirujuk oleh konteks ini, gunakan status tersebut secara langsung. Jangan menjelaskan seolah-olah belum pernah diperiksa. Jika statusnya berbahaya atau mencurigakan, prioritaskan peringatan dan jangan menyarankan pengguna membuka link.` : ""}`;
   const historyTurns = Number.isInteger(options.historyTurns)
     ? Math.max(0, Math.min(options.historyTurns, BOT_SETTINGS.max_history_turns))
     : BOT_SETTINGS.max_history_turns;
@@ -2990,10 +3063,14 @@ async function handleMessage(sock, msg) {
     ) {
       const query = text.split(/\s+/).slice(1).join(" ");
       const results = await searchWeb(cleanSearchQuery(query));
-      finalPrompt = `${text}\n${formatSearchResults(results)}`;
+      const formattedResults = formatSearchResults(results);
+      rememberToolContext(conversationId, { kind: "web_search", summary: `Command ${PREFIX}cari/${PREFIX}search sudah dijalankan untuk kueri: ${query}. Hasil pencarian sudah dimasukkan ke prompt AI.` });
+      finalPrompt = `${text}\n${formattedResults}`;
     } else if (needsWebSearch(text)) {
       const results = await searchWeb(cleanSearchQuery(text));
-      finalPrompt = `${text}\n${formatSearchResults(results)}`;
+      const formattedResults = formatSearchResults(results);
+      rememberToolContext(conversationId, { kind: "web_search", summary: `Pencarian internet untuk pertanyaan ini sudah dijalankan. Hasil pencarian sudah dimasukkan ke prompt AI.` });
+      finalPrompt = `${text}\n${formattedResults}`;
     }
 
     await sock.sendPresenceUpdate("composing", jid).catch(() => {});
