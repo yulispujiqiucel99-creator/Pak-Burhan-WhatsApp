@@ -51,6 +51,13 @@ const GEOAPIFY_API_KEY = (process.env.GEOAPIFY_API_KEY || "").trim();
 const GROQ_VISION_MODEL = (process.env.GROQ_VISION_MODEL || "qwen/qwen3.6-27b").trim();
 const MAX_VISION_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_STICKER_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_HD_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_HD_OUTPUT_BYTES = 15 * 1024 * 1024;
+const MAX_HD_OUTPUT_DIMENSION = 2560;
+const REAL_ESRGAN_DIR = path.join(__dirname, "vendor", "realesrgan");
+const REAL_ESRGAN_BIN = path.join(REAL_ESRGAN_DIR, "runtime");
+const REAL_ESRGAN_MODELS = path.join(REAL_ESRGAN_DIR, "models");
+const REAL_ESRGAN_ENABLED = process.env.REAL_ESRGAN_ENABLED !== "0";
 const STICKER_CANVAS_SIZE = 512;
 const WEEKEND_AUDIO_PATHS = {
   sabtu: (process.env.WEEKEND_AUDIO_SATURDAY_PATH || path.join(__dirname, "assets", "weekend-audio", "sabtu.mp3")).trim(),
@@ -209,6 +216,7 @@ const DEFAULT_COMMANDS = [
   { command: `${PREFIX}tempat [jenis/nama] di [lokasi]`, description: "Mencari satu tempat dan mengirim satu lokasi yang dapat dibuka di WhatsApp. Contoh: !tempat kafe di Solo." },
   { command: `${PREFIX}gambar [pertanyaan]`, description: "Kirim foto dengan caption !gambar untuk dianalisis. Contoh: !gambar tolong jelaskan soal ini." },
   { command: `${PREFIX}stiker`, description: "Ubah gambar menjadi sticker. Bisa dipakai pada caption gambar atau saat membalas gambar." },
+  { command: `${PREFIX}hd`, description: "Memperjelas dan meningkatkan resolusi foto. Bisa dipakai pada caption foto atau saat membalas foto." },
   { command: `${PREFIX}jadwal [hari]`, description: "Menampilkan pelajaran, piket kelas, dan piket MBG VII D. Contoh: !jadwal senin." },
   { command: `${PREFIX}aktifkan jadwal [tautan grup]`, description: "Khusus DM admin: mengaktifkan kirim jadwal otomatis pukul 17.00 dan 20.00 WIB tanpa menulis perintah di grup." },
   { command: `${PREFIX}nonaktifkan jadwal`, description: "Khusus DM admin: menghentikan pengiriman jadwal otomatis." },
@@ -1405,6 +1413,11 @@ function parseImageCommand(text) {
   return question ? { question } : { error: "empty" };
 }
 
+function parseHdCommand(text) {
+  const value = String(text || "").trim();
+  return new RegExp(`^${escapeRegExp(PREFIX)}hd$`, "i").test(value) ? { mode: "photo" } : null;
+}
+
 function parseStickerCommand(text) {
   const value = String(text || "").trim();
   const pattern = new RegExp(`^${escapeRegExp(PREFIX)}\\s*(?:stiker|sticker)$`, "i");
@@ -1463,6 +1476,70 @@ function validateStickerImage(imageBuffer, imageMessage) {
 }
 
 
+
+async function finalizeHdImage(imageBuffer) {
+  const metadata = await sharp(imageBuffer, { failOn: "error" }).metadata();
+  const width = Number(metadata.width || 0);
+  const height = Number(metadata.height || 0);
+  if (!width || !height) throw new Error("invalid_image_dimensions");
+
+  const scale = Math.max(1, Math.min(2, MAX_HD_OUTPUT_DIMENSION / Math.max(width, height)));
+  const targetWidth = Math.min(MAX_HD_OUTPUT_DIMENSION, Math.max(1, Math.round(width * scale)));
+  const targetHeight = Math.min(MAX_HD_OUTPUT_DIMENSION, Math.max(1, Math.round(height * scale)));
+  const base = sharp(imageBuffer, { failOn: "error" })
+    .rotate()
+    .resize({ width: targetWidth, height: targetHeight, fit: "inside", kernel: sharp.kernel.lanczos3 })
+    .sharpen({ sigma: 1.1, m1: 0.7, m2: 2.0 });
+
+  for (const quality of [90, 84, 78, 70]) {
+    const output = await base.clone().jpeg({ quality, mozjpeg: true }).toBuffer();
+    if (output.length <= MAX_HD_OUTPUT_BYTES || quality === 70) return output;
+  }
+  throw new Error("hd_output_too_large");
+}
+
+
+function runRealEsrgan(inputPath, outputPath) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      REAL_ESRGAN_BIN,
+      ["-i", inputPath, "-o", outputPath, "-m", REAL_ESRGAN_MODELS, "-n", "realesrgan-x4plus", "-s", "2", "-f", "jpg", "-t", "128", "-j", "1:1:1"],
+      { timeout: 120000, maxBuffer: 2 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        if (error) {
+          const detail = String(stderr || stdout || error.message).trim().slice(-500);
+          reject(new Error(`realesrgan_failed: ${detail}`));
+          return;
+        }
+        resolve();
+      }
+    );
+  });
+}
+
+async function renderHdImage(imageBuffer) {
+  const tmpDir = path.join(DATA_DIR, "hd-tmp");
+  const id = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}`;
+  const inputPath = path.join(tmpDir, `${id}-input.jpg`);
+  const outputPath = path.join(tmpDir, `${id}-output.jpg`);
+  fs.mkdirSync(tmpDir, { recursive: true });
+  fs.writeFileSync(inputPath, imageBuffer);
+  try {
+    if (REAL_ESRGAN_ENABLED && fs.existsSync(REAL_ESRGAN_BIN) && fs.existsSync(REAL_ESRGAN_MODELS)) {
+      try {
+        await runRealEsrgan(inputPath, outputPath);
+        const enhanced = fs.readFileSync(outputPath);
+        return await finalizeHdImage(enhanced);
+      } catch (error) {
+        console.warn("Real-ESRGAN tidak tersedia pada runtime ini, memakai fallback Sharp:", error.message);
+      }
+    }
+    return await finalizeHdImage(imageBuffer);
+  } finally {
+    fs.rmSync(inputPath, { force: true });
+    fs.rmSync(outputPath, { force: true });
+  }
+}
 
 async function renderImageSticker(imageBuffer) {
   return sharp(imageBuffer, { failOn: "error" })
@@ -2673,6 +2750,34 @@ async function handleMessage(sock, msg) {
       return;
     }
 
+    const hdCommand = parseHdCommand(text);
+    if (hdCommand) {
+      const source = getStickerImageSource(msg, messageContent);
+      if (!source) {
+        await sock.sendMessage(jid, { text: `Kirim foto dengan caption ${PREFIX}hd atau reply foto lalu tulis ${PREFIX}hd ya.` }, { quoted: msg });
+        return;
+      }
+      await sock.sendMessage(jid, { text: "Memperjelas foto🖼️ seperti memperjelas masa depanmu🧑‍🎓" }, { quoted: msg });
+      try {
+        const imageBuffer = await downloadStickerImage(msg, source.source);
+        if (!Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) throw new Error("download_failed");
+        if (imageBuffer.length > MAX_HD_IMAGE_BYTES) {
+          await sock.sendMessage(jid, { text: "Maaf, foto terlalu besar. Kirim foto maksimal 20 MB ya." }, { quoted: msg });
+          return;
+        }
+        if (!getSafeImageMimeType(source.message)) {
+          await sock.sendMessage(jid, { text: "Pak Burhan baru bisa memperjelas foto JPG, PNG, atau WebP ya." }, { quoted: msg });
+          return;
+        }
+        const hdBuffer = await renderHdImage(imageBuffer);
+        await sock.sendMessage(jid, { image: hdBuffer, mimetype: "image/jpeg", caption: "✅ Foto HD selesai." }, { quoted: msg });
+      } catch (error) {
+        console.warn("Peningkatan foto HD gagal:", error.message);
+        await sock.sendMessage(jid, { text: "Maaf, foto belum bisa diperjelas. Coba kirim foto yang lebih kecil ya." }, { quoted: msg });
+      }
+      return;
+    }
+
     const stickerCommand = parseStickerCommand(text);
     if (stickerCommand) {
       const source = getStickerImageSource(msg, messageContent);
@@ -3225,6 +3330,8 @@ module.exports = {
   formatQueueReply,
   reserveGroupRequest,
   parseImageCommand,
+  parseHdCommand,
+  renderHdImage,
   parseStickerCommand,
   getImageMessage,
   getQuotedMessage,

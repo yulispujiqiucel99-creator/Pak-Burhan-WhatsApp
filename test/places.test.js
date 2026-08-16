@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const sharp = require("sharp");
 
 const {
   getCommandIdentity,
@@ -10,6 +11,8 @@ const {
   formatQueueReply,
   reserveGroupRequest,
   parseImageCommand,
+  parseHdCommand,
+  renderHdImage,
   getImageMessage,
   getSafeImageMimeType,
   validateVisionImage,
@@ -72,6 +75,24 @@ test("role admin dan JFR tidak tercampur", () => {
 
 test("!help tidak lagi menampilkan command musik yang sudah dihapus", () => {
   assert.doesNotMatch(buildHelpText(), /!musik|Jamendo/i);
+});
+
+test("!hd menerima semua variasi huruf", () => {
+  assert.deepEqual(parseHdCommand("!hd"), { mode: "photo" });
+  assert.deepEqual(parseHdCommand("!HD"), { mode: "photo" });
+  assert.deepEqual(parseHdCommand("!Hd"), { mode: "photo" });
+  assert.equal(parseHdCommand("!hd foto"), null);
+});
+
+test("renderer foto HD menghasilkan JPEG dengan ukuran aman", async () => {
+  const input = await sharp({
+    create: { width: 160, height: 120, channels: 3, background: { r: 40, g: 120, b: 220 } },
+  }).jpeg().toBuffer();
+  const output = await renderHdImage(input);
+  const metadata = await sharp(output).metadata();
+  assert.equal(metadata.format, "jpeg");
+  assert.ok(metadata.width >= 160);
+  assert.ok(output.length <= 15 * 1024 * 1024);
 });
 
 test("menormalkan JID grup untuk pencocokan scanner otomatis", () => {
