@@ -13,6 +13,7 @@ const {
   parseImageCommand,
   parseHdCommand,
   getHdAutoMode,
+  formatHdCaption,
   renderHdImage,
   getImageMessage,
   getSafeImageMimeType,
@@ -89,6 +90,20 @@ test("mode auto HD memilih deAPI 4x, 2x, atau CPU sesuai resolusi", () => {
   assert.deepEqual(getHdAutoMode({ width: 480, height: 360 }), { mode: "deapi", scale: 4, longestSide: 480 });
   assert.deepEqual(getHdAutoMode({ width: 720, height: 480 }), { mode: "deapi", scale: 2, longestSide: 720 });
   assert.deepEqual(getHdAutoMode({ width: 1440, height: 900 }), { mode: "cpu", scale: 1, longestSide: 1440 });
+});
+
+test("caption HD menjelaskan resolusi, metode, faktor, dan pengiriman file", () => {
+  const caption = formatHdCaption({
+    inputMetadata: { width: 480, height: 360 },
+    outputMetadata: { width: 1440, height: 1080 },
+    source: "deapi",
+    cached: false,
+  }, { asFile: true });
+  assert.match(caption, /480×360/);
+  assert.match(caption, /1440×1080/);
+  assert.match(caption, /GPU deAPI/);
+  assert.match(caption, /3\.0×/);
+  assert.match(caption, /dikirim sebagai file/);
 });
 
 test("renderer foto HD menghasilkan JPEG dengan ukuran aman", async () => {

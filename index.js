@@ -1610,7 +1610,7 @@ function runRealEsrgan(inputPath, outputPath) {
   });
 }
 
-async function renderHdImage(imageBuffer) {
+async function renderHdImageDetailed(imageBuffer) {
   const metadata = await sharp(imageBuffer, { failOn: "error" }).metadata();
   const autoMode = getHdAutoMode(metadata);
   const cacheKey = crypto.createHash("sha256").update(imageBuffer).digest("hex");
@@ -1618,7 +1618,17 @@ async function renderHdImage(imageBuffer) {
   try {
     if (fs.existsSync(cachePath)) {
       const cachedStat = fs.statSync(cachePath);
-      if (Date.now() - cachedStat.mtimeMs < HD_RESULT_CACHE_TTL_MS) return fs.readFileSync(cachePath);
+      if (Date.now() - cachedStat.mtimeMs < HD_RESULT_CACHE_TTL_MS) {
+        const cachedBuffer = fs.readFileSync(cachePath);
+        return {
+          buffer: cachedBuffer,
+          inputMetadata: metadata,
+          outputMetadata: await sharp(cachedBuffer, { failOn: "error" }).metadata(),
+          autoMode,
+          source: "cache",
+          cached: true,
+        };
+      }
       fs.rmSync(cachePath, { force: true });
     }
   } catch (error) {
@@ -1631,7 +1641,14 @@ async function renderHdImage(imageBuffer) {
       const finalBuffer = await finalizeHdImage(remote.buffer);
       fs.mkdirSync(HD_RESULT_CACHE_DIR, { recursive: true });
       fs.writeFileSync(cachePath, finalBuffer);
-      return finalBuffer;
+      return {
+        buffer: finalBuffer,
+        inputMetadata: metadata,
+        outputMetadata: await sharp(finalBuffer, { failOn: "error" }).metadata(),
+        autoMode,
+        source: "deapi",
+        cached: false,
+      };
     } catch (error) {
       console.warn("deAPI HD gagal, memakai fallback CPU:", error.message);
     }
@@ -1648,7 +1665,15 @@ async function renderHdImage(imageBuffer) {
       try {
         await runRealEsrgan(inputPath, outputPath);
         const enhanced = fs.readFileSync(outputPath);
-        return await finalizeHdImage(enhanced);
+        const finalBuffer = await finalizeHdImage(enhanced);
+        return {
+          buffer: finalBuffer,
+          inputMetadata: metadata,
+          outputMetadata: await sharp(finalBuffer, { failOn: "error" }).metadata(),
+          autoMode,
+          source: "realesrgan",
+          cached: false,
+        };
       } catch (error) {
         console.warn("Real-ESRGAN tidak tersedia pada runtime ini, memakai fallback Sharp:", error.message);
       }
@@ -1660,11 +1685,54 @@ async function renderHdImage(imageBuffer) {
     } catch (error) {
       console.warn("Cache foto HD gagal disimpan:", error.message);
     }
-    return finalBuffer;
+    return {
+      buffer: finalBuffer,
+      inputMetadata: metadata,
+      outputMetadata: await sharp(finalBuffer, { failOn: "error" }).metadata(),
+      autoMode,
+      source: "cpu",
+      cached: false,
+    };
   } finally {
     fs.rmSync(inputPath, { force: true });
     fs.rmSync(outputPath, { force: true });
   }
+}
+
+async function renderHdImage(imageBuffer) {
+  const result = await renderHdImageDetailed(imageBuffer);
+  return result.buffer;
+}
+
+function formatHdDimension(metadata) {
+  const width = Number(metadata?.width || 0);
+  const height = Number(metadata?.height || 0);
+  return width && height ? `${width}×${height}` : "tidak diketahui";
+}
+
+function formatHdCaption(result, { asFile = false } = {}) {
+  const inputWidth = Number(result?.inputMetadata?.width || 0);
+  const inputHeight = Number(result?.inputMetadata?.height || 0);
+  const outputWidth = Number(result?.outputMetadata?.width || 0);
+  const outputHeight = Number(result?.outputMetadata?.height || 0);
+  const widthFactor = inputWidth && outputWidth ? outputWidth / inputWidth : 1;
+  const heightFactor = inputHeight && outputHeight ? outputHeight / inputHeight : 1;
+  const factor = Math.min(widthFactor, heightFactor);
+  const method = {
+    deapi: "GPU deAPI · RealESRGAN x4",
+    realesrgan: "Real-ESRGAN lokal",
+    cpu: "CPU lokal · penajaman aman",
+    cache: "cache hasil sebelumnya",
+  }[result?.source] || "pemrosesan lokal";
+  const lines = [
+    `✅ Berhasil mengubah foto dari resolusi *${formatHdDimension(result?.inputMetadata)}* menjadi *${formatHdDimension(result?.outputMetadata)}*.`,
+    "",
+    `🧠 Metode: ${method}`,
+    `📈 Peningkatan: sekitar *${factor.toFixed(1)}×*`,
+    result?.cached ? "⚡ Hasil diambil dari cache, jadi tidak memakai GPU baru." : "🔒 Foto diproses sementara dan tidak disimpan sebagai memory percakapan.",
+  ];
+  if (asFile) lines.push("📎 Ukuran hasil besar, jadi dikirim sebagai file agar kualitasnya tetap terjaga.");
+  return lines.join("\n");
 }
 
 async function renderImageSticker(imageBuffer) {
@@ -2907,16 +2975,19 @@ async function handleMessage(sock, msg) {
           await sock.sendMessage(jid, { text: "Pak Burhan baru bisa memperjelas foto JPG, PNG, atau WebP ya." }, { quoted: msg });
           return;
         }
-        const hdBuffer = await renderHdImage(imageBuffer);
-        if (hdBuffer.length > MAX_HD_OUTPUT_BYTES) {
+        const hdResult = await renderHdImageDetailed(imageBuffer);
+        const hdBuffer = hdResult.buffer;
+        const asFile = hdBuffer.length > MAX_HD_OUTPUT_BYTES;
+        const caption = formatHdCaption(hdResult, { asFile });
+        if (asFile) {
           await sock.sendMessage(jid, {
             document: hdBuffer,
             mimetype: "image/jpeg",
             fileName: "foto-hd.jpg",
-            caption: "✅ Foto HD selesai. Ukurannya besar, jadi dikirim sebagai file agar kualitasnya tetap terjaga.",
+            caption,
           }, { quoted: msg });
         } else {
-          await sock.sendMessage(jid, { image: hdBuffer, mimetype: "image/jpeg", caption: "✅ Foto HD selesai." }, { quoted: msg });
+          await sock.sendMessage(jid, { image: hdBuffer, mimetype: "image/jpeg", caption }, { quoted: msg });
         }
       } catch (error) {
         console.warn("Peningkatan foto HD gagal:", error.message);
@@ -3479,7 +3550,9 @@ module.exports = {
   parseImageCommand,
   parseHdCommand,
   getHdAutoMode,
+  formatHdCaption,
   renderHdImage,
+  renderHdImageDetailed,
   parseStickerCommand,
   getImageMessage,
   getQuotedMessage,
