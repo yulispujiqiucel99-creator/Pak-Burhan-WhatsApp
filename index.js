@@ -2635,6 +2635,7 @@ async function sendWeekendAudio(sock, date = new Date()) {
       mimetype: "audio/ogg; codecs=opus",
       ptt: true,
     });
+    await sendClassScheduleContent(sock, BOT_STATE.classScheduleGroupJid, dayKey, date, { includeAudio: false });
     BOT_STATE.lastWeekendAudioDeliveryKey = deliveryKey;
     saveBotState();
     console.log(`Audio akhir pekan ${dayKey} terkirim pada ${deliveryKey} (${audio.duration.toFixed(1)} detik).`);
