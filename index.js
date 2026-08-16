@@ -19,6 +19,7 @@ const axios = require("axios");
 const sharp = require("sharp");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { execFile } = require("child_process");
 const { promisify } = require("util");
 const execFileAsync = promisify(execFile);
@@ -90,6 +91,10 @@ const QUESTION_USAGE_FILE = path.join(DATA_DIR, "question_usage.json");
 const BOT_STATE_FILE = path.join(DATA_DIR, "bot_state.json");
 const WEEKEND_AUDIO_TEMP_DIR = path.join(DATA_DIR, "weekend-audio-tmp");
 const DAILY_QUESTION_LIMIT = 20;
+const JFR_CODE_LENGTH = 7;
+const JFR_CODE_TTL_MS = 60 * 60 * 1000;
+const JFR_MAX_ATTEMPTS = 3;
+const JFR_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 const DAILY_QUESTION_WINDOW_MS = 24 * 60 * 60 * 1000;
 const GROUP_REST_START_MINUTES = 21 * 60 + 30;
 const GROUP_REST_END_MINUTES = 4 * 60;
@@ -347,12 +352,15 @@ async function deleteProfileFromSupabase(lid) {
   }
 }
 
-function buildHelpText() {
+function buildHelpText({ isAdmin = false } = {}) {
   const settings = BOT_SETTINGS;
   const commandLines = settings.commands
     .map((item, index) => `${index + 1}. ${item.command}\n   ${item.description}`)
     .join("\n\n");
-  return `Nah, ini daftar yang bisa kamu pakai ya:\n\n${commandLines}\n\nSebelum chat AI dimulai, ${settings.bot_name} akan meminta nama dan gender terlebih dahulu agar panggilannya tepat.\n\nIngat ya, berbicara yang sopan. ${settings.bot_name} senang membantu yang sopan. 🙂`;
+  const adminLines = isAdmin
+    ? "\n\nCommand rahasia admin:\n!daftarjfr — melihat daftar JFR aktif\n!cabutjfr [LID] — mencabut akses JFR"
+    : "";
+  return `Nah, ini daftar yang bisa kamu pakai ya:\n\n${commandLines}${adminLines}\n\nSebelum chat AI dimulai, ${settings.bot_name} akan meminta nama dan gender terlebih dahulu agar panggilannya tepat.\n\nIngat ya, berbicara yang sopan. ${settings.bot_name} senang membantu yang sopan. 🙂`;
 }
 
 let MEMORY = {};
@@ -367,6 +375,9 @@ let BOT_STATE = {
   holidayCalendar: {},
   lastHolidayNotificationKeys: {},
   lastHolidayDiscoveryAt: "",
+  jfrRoles: {},
+  jfrPending: {},
+  jfrOnboardingCandidates: {},
 };
 let groupRestTimer = null;
 let classScheduleTimer = null;
@@ -414,11 +425,11 @@ function loadBotState() {
     if (fs.existsSync(BOT_STATE_FILE)) {
       const parsed = JSON.parse(fs.readFileSync(BOT_STATE_FILE, "utf8"));
       BOT_STATE = parsed && typeof parsed === "object"
-        ? { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "", scheduleActivationFailureMessageId: "", lastWeekendAudioDeliveryKey: "", holidayCalendar: {}, lastHolidayNotificationKeys: {}, lastHolidayDiscoveryAt: "", ...parsed }
-        : { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "", scheduleActivationFailureMessageId: "", lastWeekendAudioDeliveryKey: "", holidayCalendar: {}, lastHolidayNotificationKeys: {}, lastHolidayDiscoveryAt: "" };
+        ? { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "", scheduleActivationFailureMessageId: "", lastWeekendAudioDeliveryKey: "", holidayCalendar: {}, lastHolidayNotificationKeys: {}, lastHolidayDiscoveryAt: "", jfrRoles: {}, jfrPending: {}, jfrOnboardingCandidates: {}, ...parsed }
+        : { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "", scheduleActivationFailureMessageId: "", lastWeekendAudioDeliveryKey: "", holidayCalendar: {}, lastHolidayNotificationKeys: {}, lastHolidayDiscoveryAt: "", jfrRoles: {}, jfrPending: {}, jfrOnboardingCandidates: {} };
     }
   } catch {
-    BOT_STATE = { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "", scheduleActivationFailureMessageId: "", lastWeekendAudioDeliveryKey: "", holidayCalendar: {}, lastHolidayNotificationKeys: {}, lastHolidayDiscoveryAt: "" };
+    BOT_STATE = { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "", scheduleActivationFailureMessageId: "", lastWeekendAudioDeliveryKey: "", holidayCalendar: {}, lastHolidayNotificationKeys: {}, lastHolidayDiscoveryAt: "", jfrRoles: {}, jfrPending: {}, jfrOnboardingCandidates: {} };
   }
 }
 
@@ -506,7 +517,102 @@ function consumeQuestionQuotaForStore(usageStore, lid, now = Date.now()) {
   return true;
 }
 
+function isAdminLid(lid) {
+  return Boolean(lid) && String(lid) === String(BOT_SETTINGS.private_allowed_lid);
+}
+
+function isJfrRole(lid) {
+  return Boolean(lid && BOT_STATE.jfrRoles?.[lid]);
+}
+
+function hasPendingJfr(lid) {
+  const pending = lid ? BOT_STATE.jfrPending?.[lid] : null;
+  return Boolean(pending && Number(pending.expiresAt) > Date.now());
+}
+
+function isJfrCandidate(lid) {
+  return Boolean(lid && BOT_STATE.jfrOnboardingCandidates?.[lid]);
+}
+
+function cleanupJfrState(now = Date.now()) {
+  for (const [lid, pending] of Object.entries(BOT_STATE.jfrPending || {})) {
+    if (!pending || Number(pending.expiresAt) <= now) delete BOT_STATE.jfrPending[lid];
+  }
+  for (const [lid, candidate] of Object.entries(BOT_STATE.jfrOnboardingCandidates || {})) {
+    if (!candidate || Number(candidate.expiresAt) <= now) delete BOT_STATE.jfrOnboardingCandidates[lid];
+  }
+}
+
+function createJfrCode() {
+  const bytes = crypto.randomBytes(JFR_CODE_LENGTH);
+  return [...bytes].map((byte) => JFR_CODE_ALPHABET[byte % JFR_CODE_ALPHABET.length]).join("");
+}
+
+function hashJfrCode(code) {
+  return crypto.createHash("sha256").update(String(code || "").trim().toUpperCase()).digest("hex");
+}
+
+function jfrCodeMatches(input, expectedHash) {
+  const actual = Buffer.from(hashJfrCode(input), "hex");
+  const expected = Buffer.from(String(expectedHash || ""), "hex");
+  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+}
+
+function isValidJfrCodeInput(text) {
+  return /^[A-Za-z0-9]{7}$/.test(String(text || "").trim());
+}
+
+async function beginJfrVerification(sock, requesterLid, requesterJid) {
+  cleanupJfrState();
+  const adminJid = getAdminDmJid();
+  if (!adminJid) return { ok: false, error: "admin_not_configured" };
+  const code = createJfrCode();
+  BOT_STATE.jfrPending[requesterLid] = {
+    codeHash: hashJfrCode(code),
+    expiresAt: Date.now() + JFR_CODE_TTL_MS,
+    attemptsUsed: 0,
+    requesterJid,
+  };
+  saveBotState();
+  await sock.sendMessage(adminJid, {
+    text: `⚠️KODE JFR BARU SAJA MASUK⚠️\n${code}\n⚠️*JANGAN BAGIKAN KODE INI JIKA TIDAK ADA YANG MEMINTA MENJADI JFR*⚠️`,
+  });
+  return { ok: true };
+}
+
+async function handleJfrCodeAttempt(sock, jid, lid, text, msg) {
+  cleanupJfrState();
+  const pending = BOT_STATE.jfrPending?.[lid];
+  if (!pending) return false;
+  if (!isValidJfrCodeInput(text) || !jfrCodeMatches(text, pending.codeHash)) {
+    pending.attemptsUsed = Number(pending.attemptsUsed || 0) + 1;
+    const remaining = Math.max(0, JFR_MAX_ATTEMPTS - pending.attemptsUsed);
+    if (!remaining) {
+      delete BOT_STATE.jfrPending[lid];
+      saveBotState();
+      await sock.sendMessage(jid, { text: "❌ Kode JFR salah tiga kali. Permintaan verifikasi sudah hangus. Kirim #JFR lagi jika ingin mencoba kembali." }, { quoted: msg });
+      return true;
+    }
+    saveBotState();
+    await sock.sendMessage(jid, { text: `❌ KODE SALAH\nSISA ${remaining}/${JFR_MAX_ATTEMPTS} KESEMPATAN ⚠️` }, { quoted: msg });
+    return true;
+  }
+  BOT_STATE.jfrRoles[lid] = { grantedAt: new Date().toISOString() };
+  delete BOT_STATE.jfrPending[lid];
+  delete BOT_STATE.jfrOnboardingCandidates[lid];
+  saveBotState();
+  await sock.sendMessage(jid, { text: "✅ Verifikasi JFR berhasil. Sekarang kamu dapat chat AI melalui DM tanpa batas kuota. Command admin tetap tidak tersedia untuk akun JFR." }, { quoted: msg });
+  return true;
+}
+
+function formatJfrList() {
+  const entries = Object.entries(BOT_STATE.jfrRoles || {});
+  if (!entries.length) return "Belum ada akun JFR yang terverifikasi.";
+  return `Daftar JFR aktif (${entries.length}):\n${entries.map(([lid, item], index) => `${index + 1}. ${lid} — sejak ${item.grantedAt || "tidak diketahui"}`).join("\n")}`;
+}
+
 function consumeQuestionQuota(lid, now = Date.now()) {
+  if (isAdminLid(lid) || isJfrRole(lid)) return true;
   const allowed = consumeQuestionQuotaForStore(QUESTION_USAGE, lid, now);
   saveQuestionUsage();
   return allowed;
@@ -555,6 +661,9 @@ function formatBotDateTime(date) {
 }
 
 function buildQuotaStatusReply(profile, lid, now = Date.now()) {
+  if (isAdminLid(lid) || isJfrRole(lid)) {
+    return `Nah, ${getProfileGreeting(profile)}.\n\nKuota DM: tidak dibatasi untuk peran ${isAdminLid(lid) ? "admin" : "JFR"}. ✅`;
+  }
   const quota = getQuestionQuotaStatusForStore(QUESTION_USAGE, lid, now);
   const resetText = quota.resetAt
     ? `Reset kuota: ${formatBotDateTime(quota.resetAt)}`
@@ -698,6 +807,7 @@ async function processProfileOnboarding(profileId, lid, text) {
   await saveProfileToSupabase(lid, profile);
   return {
     ready: false,
+    profile,
     reply: `Terima kasih, ${getProfileGreeting(profile)}. Sekarang kamu boleh kirim pertanyaan untuk Pak Burhan ya.`,
   };
 }
@@ -2367,8 +2477,9 @@ async function handleMessage(sock, msg) {
     const senderLid = getSenderLid(msg);
     const senderNumber = getSenderNumber(msg);
     const senderId = senderLid || senderNumber || "unknown";
-    if (!isGroup && senderLid !== BOT_SETTINGS.private_allowed_lid) {
-      console.log(`[P][${senderLid || "unknown"}] pesan privat diabaikan: LID tidak diizinkan`);
+    const isJfrRequest = text.trim().toLowerCase() === "#jfr";
+    if (!isGroup && !isAdminLid(senderLid) && !isJfrRole(senderLid) && !isJfrRequest && !hasPendingJfr(senderLid) && !isJfrCandidate(senderLid)) {
+      console.log(`[P][${senderLid || "unknown"}] pesan privat diabaikan: bukan admin, JFR, atau permintaan verifikasi`);
       return;
     }
 
@@ -2421,13 +2532,63 @@ async function handleMessage(sock, msg) {
       const handledScheduleRetry = await retryScheduleActivationFromReply(sock, msg, jid, text);
       if (handledScheduleRetry) return;
     }
+    if (hasPendingJfr(senderLid) && !isJfrRequest) {
+      if (!isGroup) {
+        await handleJfrCodeAttempt(sock, jid, senderLid, text, msg);
+      }
+      return;
+    }
+
+    if (isJfrRequest) {
+      if (isAdminLid(senderLid) || isJfrRole(senderLid)) {
+        await sock.sendMessage(jid, { text: "Akun ini sudah memiliki akses JFR atau admin ya." }, { quoted: msg });
+        return;
+      }
+      BOT_STATE.jfrOnboardingCandidates[senderLid] = { expiresAt: Date.now() + JFR_CODE_TTL_MS };
+      saveBotState();
+      const knownProfile = await loadProfileFromSupabase(senderLid, profileId);
+      if (knownProfile?.name && knownProfile?.gender) {
+        await beginJfrVerification(sock, senderLid, jid);
+        await sock.sendMessage(jid, { text: "Silakan masukkan kode 7 digit dari admin. Balasan berikutnya akan dianggap sebagai kode verifikasi. Kode berlaku selama 1 jam." }, { quoted: msg });
+      } else {
+        await sock.sendMessage(jid, { text: "Baik, permintaan JFR dicatat. Sebelum verifikasi, Pak Burhan perlu mengetahui nama dan gender kamu terlebih dahulu ya. Tulis nama kamu." }, { quoted: msg });
+      }
+      return;
+    }
+
+    if (lower === "!daftarjfr" || lower.startsWith("!cabutjfr")) {
+      if (isGroup || !isAdminLid(senderLid)) {
+        await sock.sendMessage(jid, { text: "Command ini hanya tersedia di DM admin." }, { quoted: msg });
+        return;
+      }
+      if (lower === "!daftarjfr") {
+        await sock.sendMessage(jid, { text: formatJfrList() }, { quoted: msg });
+        return;
+      }
+      const targetLid = text.trim().split(/\s+/)[1]?.replace(/\D/g, "");
+      if (!targetLid) {
+        await sock.sendMessage(jid, { text: "Format: !cabutjfr [LID]" }, { quoted: msg });
+        return;
+      }
+      if (!BOT_STATE.jfrRoles?.[targetLid]) {
+        await sock.sendMessage(jid, { text: "LID tersebut belum terdaftar sebagai JFR." }, { quoted: msg });
+        return;
+      }
+      delete BOT_STATE.jfrRoles[targetLid];
+      delete BOT_STATE.jfrPending[targetLid];
+      delete BOT_STATE.jfrOnboardingCandidates[targetLid];
+      saveBotState();
+      await sock.sendMessage(jid, { text: `✅ Akses JFR untuk ${targetLid} sudah dicabut.` }, { quoted: msg });
+      return;
+    }
+
     if (
       lower === `${PREFIX}help` ||
       lower === `${PREFIX}menu` ||
       lower === "help" ||
       lower === "menu"
     ) {
-      await sock.sendMessage(jid, { text: buildHelpText() }, { quoted: msg });
+      await sock.sendMessage(jid, { text: buildHelpText({ isAdmin: isAdminLid(senderLid) }) }, { quoted: msg });
       return;
     }
 
@@ -2585,6 +2746,10 @@ async function handleMessage(sock, msg) {
     const onboarding = await processProfileOnboarding(profileId, senderId, text);
     if (!onboarding.ready) {
       await sock.sendMessage(jid, { text: onboarding.reply }, { quoted: msg });
+      if (isJfrCandidate(senderLid) && onboarding.profile?.name && onboarding.profile?.gender) {
+        await beginJfrVerification(sock, senderLid, jid);
+        await sock.sendMessage(jid, { text: "Silakan masukkan kode 7 digit dari admin. Balasan berikutnya akan dianggap sebagai kode verifikasi. Kode berlaku selama 1 jam." }, { quoted: msg });
+      }
       return;
     }
 
@@ -3028,6 +3193,9 @@ module.exports = {
   getAudioDurationSeconds,
   getUpcomingScheduleDate,
   buildHelpText,
+  isAdminLid,
+  isJfrRole,
+  isValidJfrCodeInput,
   parseIndonesianDate,
   getOfficialHolidayDate,
   isHolidayDiscoveryWindow,

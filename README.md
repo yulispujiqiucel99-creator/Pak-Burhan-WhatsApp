@@ -193,3 +193,20 @@ Fitur ini memakai `TAVILY_API_KEY` yang sama dengan pencarian internet. Jika key
 ```
 
 Audio khusus hari raya belum diaktifkan oleh mekanisme ini karena aset audionya belum berada di repository. Saat aset final sudah tersedia, pengiriman audio dapat ditambahkan tanpa mengubah aturan tanggal dan anti-duplikasi.
+
+
+## Verifikasi Peran JFR
+
+Akun dapat meminta peran JFR dengan mengirim **`#JFR` melalui DM**. Fitur ini tidak diproses di grup. Jika identitas nama dan gender belum lengkap, bot akan menyelesaikan onboarding terlebih dahulu. Setelah identitas diketahui, bot membuat kode acak tujuh karakter yang hanya terdiri dari huruf kapital `A-Z` dan angka `0-9`.
+
+Kode dikirim hanya ke DM admin dengan format peringatan berikut:
+
+```text
+⚠️KODE JFR BARU SAJA MASUK⚠️
+[KODE 7 KARAKTER]
+⚠️JANGAN BAGIKAN KODE INI JIKA TIDAK ADA YANG MEMINTA MENJADI JFR⚠️
+```
+
+Peminta menerima instruksi untuk memasukkan kode. Kode berlaku selama **satu jam**, hanya dapat digunakan sekali, dan memiliki maksimal **tiga percobaan**. Kode disimpan dalam bentuk hash pada state bot, bukan sebagai kode teks biasa. Setelah verifikasi berhasil, peran JFR bersifat permanen sampai dicabut admin.
+
+JFR dapat melakukan chat AI melalui DM tanpa batas kuota, tetapi tidak memperoleh akses command admin. Daftar command admin tidak ditampilkan pada menu JFR atau member. Di DM admin, menu tambahan menampilkan `!daftarjfr` untuk melihat JFR aktif dan `!cabutjfr [LID]` untuk mencabut akses. Data role dan permintaan verifikasi disimpan pada `data/bot_state.json` di volume Railway.

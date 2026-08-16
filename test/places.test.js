@@ -48,7 +48,26 @@ const {
   isAutoLinkScanGroup,
   classifyAutomaticLinkResults,
   buildHelpText,
+  isAdminLid,
+  isJfrRole,
+  isValidJfrCodeInput,
 } = require("../index");
+
+test("kode JFR harus tujuh karakter alfanumerik", () => {
+  assert.equal(isValidJfrCodeInput("289O4AD"), true);
+  assert.equal(isValidJfrCodeInput("289o4ad"), true);
+  assert.equal(isValidJfrCodeInput("123456"), false);
+  assert.equal(isValidJfrCodeInput("12345678"), false);
+  assert.equal(isValidJfrCodeInput("ABC-123"), false);
+});
+
+test("role admin dan JFR tidak tercampur", () => {
+  assert.equal(isAdminLid("12345"), false);
+  assert.equal(isJfrRole("12345"), false);
+  assert.doesNotMatch(buildHelpText(), /!daftarjfr|!cabutjfr/);
+  assert.match(buildHelpText({ isAdmin: true }), /!daftarjfr/);
+  assert.match(buildHelpText({ isAdmin: true }), /!cabutjfr/);
+});
 
 test("!help tidak lagi menampilkan command musik yang sudah dihapus", () => {
   assert.doesNotMatch(buildHelpText(), /!musik|Jamendo/i);
