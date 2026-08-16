@@ -51,6 +51,7 @@ const GROQ_VISION_MODEL = (process.env.GROQ_VISION_MODEL || "qwen/qwen3.6-27b").
 const MAX_VISION_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_STICKER_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_STICKER_TEXT_CHARS = 180;
+const MAX_IMAGE_STICKER_TEXT_CHARS = 8;
 const MAX_STICKER_TEXT_LINES = 6;
 const STICKER_CANVAS_SIZE = 512;
 const WEEKEND_AUDIO_PATHS = {
@@ -1207,10 +1208,10 @@ function parseImageCommand(text) {
 function parseStickerCommand(text) {
   const match = String(text || "")
     .trim()
-    .match(new RegExp(`^${escapeRegExp(PREFIX)}(?:stiker|sticker)(?:\\s+(.+))?$`, "i"));
+    .match(new RegExp(`^${escapeRegExp(PREFIX)}\\s*(?:stiker|sticker)(?:\\s+(.+))?$`, "i"));
   if (!match) return null;
   const extraText = String(match[1] || "").trim();
-  return extraText ? { error: "text_not_supported", text: extraText } : { mode: "image" };
+  return extraText ? { mode: "image-text", text: extraText } : { mode: "image" };
 }
 
 function parseTextStickerCommand(text) {
@@ -1285,23 +1286,13 @@ function escapeXml(text) {
     .replace(/'/g, "&apos;");
 }
 
-function wrapStickerText(text, maxChars = 16) {
+function wrapStickerText(text, maxChars = 18) {
   const words = String(text || "").trim().split(/\s+/).filter(Boolean);
   const lines = [];
   let current = "";
   for (const word of words) {
-    if (word.length > maxChars) {
-      if (current) {
-        lines.push(current);
-        current = "";
-      }
-      for (let index = 0; index < word.length; index += maxChars) {
-        lines.push(word.slice(index, index + maxChars));
-      }
-      continue;
-    }
     const candidate = current ? `${current} ${word}` : word;
-    if (candidate.length > maxChars && current) {
+    if (current && candidate.length > maxChars) {
       lines.push(current);
       current = word;
     } else {
@@ -1312,39 +1303,82 @@ function wrapStickerText(text, maxChars = 16) {
   return lines;
 }
 
-function validateStickerText(text) {
+function validateStickerText(text, maxChars = 18) {
   const value = String(text || "").replace(/\s+/g, " ").trim();
   if (!value) return { error: "empty" };
   if (value.length > MAX_STICKER_TEXT_CHARS) return { error: "too_long" };
-  const lines = wrapStickerText(value);
+  const lines = wrapStickerText(value, maxChars);
   if (!lines.length || lines.length > MAX_STICKER_TEXT_LINES) return { error: "too_long" };
   return { text: value, lines };
 }
 
-async function renderImageSticker(imageBuffer) {
-  return sharp(imageBuffer, { failOn: "error" })
+function validateImageStickerText(text) {
+  const value = String(text || "").replace(/\s+/g, " ").trim();
+  const letterCount = Array.from(value.replace(/\s/g, "")).length;
+  if (!value) return { error: "empty" };
+  if (letterCount > MAX_IMAGE_STICKER_TEXT_CHARS) return { error: "too_long" };
+  return { text: value.toUpperCase() };
+}
+
+function getDynamicFontSize(lines, maxLineChars, baseSize = 74) {
+  const lineFactor = lines.length > 4 ? 0.68 : lines.length > 2 ? 0.82 : 1;
+  const widthFactor = Math.min(1, 10 / Math.max(1, maxLineChars));
+  return Math.max(24, Math.round(baseSize * lineFactor * widthFactor));
+}
+
+function buildImageStickerOverlaySvg(text) {
+  const value = validateImageStickerText(text);
+  if (value.error) return value;
+  const fontSize = value.text.length <= 4 ? 92 : 76;
+  const svg = `<svg width="${STICKER_CANVAS_SIZE}" height="${STICKER_CANVAS_SIZE}" viewBox="0 0 ${STICKER_CANVAS_SIZE} ${STICKER_CANVAS_SIZE}" xmlns="http://www.w3.org/2000/svg"><text x="256" y="96" text-anchor="middle" fill="#ffffff" stroke="#000000" stroke-width="8" paint-order="stroke fill" stroke-linejoin="round" font-family="Impact, Arial Narrow, Arial Black, sans-serif" font-size="${fontSize}px" font-weight="900">${escapeXml(value.text)}</text></svg>`;
+  return { buffer: Buffer.from(svg), text: value.text };
+}
+
+async function renderImageSticker(imageBuffer, overlayText = "") {
+  const pipeline = sharp(imageBuffer, { failOn: "error" })
     .rotate()
     .resize(STICKER_CANVAS_SIZE, STICKER_CANVAS_SIZE, {
       fit: "contain",
       background: { r: 0, g: 0, b: 0, alpha: 0 },
-    })
-    .webp({ quality: 82 })
-    .toBuffer();
+    });
+  if (String(overlayText || "").trim()) {
+    const overlay = buildImageStickerOverlaySvg(overlayText);
+    if (overlay.error) return overlay;
+    pipeline.composite([{ input: overlay.buffer, blend: "over" }]);
+  }
+  return pipeline.webp({ quality: 82 }).toBuffer();
 }
 
-async function renderTextSticker(text, style = "brat") {
-  const validation = validateStickerText(text);
-  if (validation.error) return { error: validation.error };
-  const lines = validation.lines;
-  const fontSize = lines.length <= 2 ? 72 : lines.length <= 4 ? 58 : 46;
-  const lineHeight = Math.round(fontSize * 1.16);
+function buildBratSvg(lines) {
+  const maxLineChars = Math.max(...lines.map((line) => line.length));
+  const fontSize = getDynamicFontSize(lines, maxLineChars, 88);
+  const lineHeight = Math.round(fontSize * 1.08);
   const startY = Math.round((STICKER_CANVAS_SIZE - (lines.length - 1) * lineHeight) / 2 + fontSize * 0.35);
-  const background = style === "iqc" ? "#fffdf3" : "#b8f56a";
-  const foreground = "#111111";
   const textNodes = lines
     .map((line, index) => `<text x="256" y="${startY + index * lineHeight}" text-anchor="middle">${escapeXml(line)}</text>`)
     .join("");
-  const svg = `<svg width="${STICKER_CANVAS_SIZE}" height="${STICKER_CANVAS_SIZE}" viewBox="0 0 ${STICKER_CANVAS_SIZE} ${STICKER_CANVAS_SIZE}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" rx="28" fill="${background}"/><g fill="${foreground}" font-family="Noto Sans, Arial, sans-serif" font-size="${fontSize}px" font-weight="700">${textNodes}</g></svg>`;
+  return `<svg width="${STICKER_CANVAS_SIZE}" height="${STICKER_CANVAS_SIZE}" viewBox="0 0 ${STICKER_CANVAS_SIZE} ${STICKER_CANVAS_SIZE}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#8acf00"/><g fill="#000000" font-family="Arial Narrow, Impact, Arial Black, Helvetica, sans-serif" font-size="${fontSize}px" font-weight="700">${textNodes}</g></svg>`;
+}
+
+function buildIqcSvg(lines) {
+  const maxLineChars = Math.max(...lines.map((line) => line.length));
+  const fontSize = getDynamicFontSize(lines, maxLineChars, 34);
+  const lineHeight = Math.round(fontSize * 1.22);
+  const bubbleWidth = Math.min(432, Math.max(190, 38 + maxLineChars * fontSize * 0.52));
+  const bubbleHeight = 42 + lines.length * lineHeight;
+  const bubbleX = 512 - bubbleWidth - 42;
+  const bubbleY = 126;
+  const textNodes = lines
+    .map((line, index) => `<text x="${bubbleX + 22}" y="${bubbleY + 32 + (index + 1) * lineHeight - 8}" text-anchor="start">${escapeXml(line)}</text>`)
+    .join("");
+  return `<svg width="${STICKER_CANVAS_SIZE}" height="${STICKER_CANVAS_SIZE}" viewBox="0 0 ${STICKER_CANVAS_SIZE} ${STICKER_CANVAS_SIZE}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#f2f2f7"/><rect width="100%" height="82" fill="#ffffff"/><path d="M26 42h24M26 42l12-10M26 42l12 10" stroke="#007aff" stroke-width="5" fill="none" stroke-linecap="round"/><text x="256" y="36" text-anchor="middle" fill="#111111" font-family="Arial, Helvetica, sans-serif" font-size="24px" font-weight="700">Messages</text><text x="256" y="67" text-anchor="middle" fill="#111111" font-family="Arial, Helvetica, sans-serif" font-size="16px">Pak Burhan</text><rect x="${bubbleX}" y="${bubbleY}" width="${bubbleWidth}" height="${bubbleHeight}" rx="26" fill="#0a84ff"/><path d="M${bubbleX + bubbleWidth - 2} ${bubbleY + bubbleHeight - 30} Q${bubbleX + bubbleWidth + 18} ${bubbleY + bubbleHeight - 12} ${bubbleX + bubbleWidth - 24} ${bubbleY + bubbleHeight - 8}Z" fill="#0a84ff"/><g fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}px">${textNodes}</g></svg>`;
+}
+
+async function renderTextSticker(text, style = "brat") {
+  const maxChars = style === "iqc" ? 20 : 18;
+  const validation = validateStickerText(text, maxChars);
+  if (validation.error) return { error: validation.error };
+  const svg = style === "iqc" ? buildIqcSvg(validation.lines) : buildBratSvg(validation.lines);
   return { buffer: await sharp(Buffer.from(svg)).webp({ quality: 90 }).toBuffer(), text: validation.text };
 }
 
@@ -2352,15 +2386,16 @@ async function handleMessage(sock, msg) {
     const stickerCommand = parseStickerCommand(text);
     const textStickerCommand = parseTextStickerCommand(text);
     if (stickerCommand || textStickerCommand) {
-      if (stickerCommand?.error === "text_not_supported") {
-        await sock.sendMessage(
-          jid,
-          { text: `Untuk sticker gambar, kirim atau reply gambar dengan caption ${PREFIX}stiker tanpa teks tambahan ya.` },
-          { quoted: msg }
-        );
-        return;
-      }
-      if (stickerCommand?.mode === "image") {
+      if (stickerCommand?.mode === "image" || stickerCommand?.mode === "image-text") {
+        const overlayText = stickerCommand.mode === "image-text" ? validateImageStickerText(stickerCommand.text) : { text: "" };
+        if (overlayText.error === "too_long") {
+          await sock.sendMessage(jid, { text: "Teks terlalu banyak huruf. Maksimal 8 huruf untuk sticker gambar ya." }, { quoted: msg });
+          return;
+        }
+        if (overlayText.error === "empty") {
+          await sock.sendMessage(jid, { text: `Tulis teks setelah ${PREFIX}stiker atau gunakan ${PREFIX}stiker tanpa teks untuk sticker gambar biasa ya.` }, { quoted: msg });
+          return;
+        }
         const source = getStickerImageSource(msg, messageContent);
         if (!source) {
           await sock.sendMessage(
@@ -2383,7 +2418,11 @@ async function handleMessage(sock, msg) {
             return;
           }
           if (validation.error) throw new Error(validation.error);
-          const stickerBuffer = await renderImageSticker(imageBuffer);
+          const stickerBuffer = await renderImageSticker(imageBuffer, overlayText.text);
+          if (stickerBuffer?.error === "too_long") {
+            await sock.sendMessage(jid, { text: "Teks terlalu banyak huruf. Maksimal 8 huruf untuk sticker gambar ya." }, { quoted: msg });
+            return;
+          }
           await sock.sendMessage(jid, { sticker: stickerBuffer }, { quoted: msg });
         } catch (error) {
           console.warn("Pembuatan sticker gambar gagal:", error.message);
@@ -2916,6 +2955,7 @@ module.exports = {
   validateStickerImage,
   wrapStickerText,
   validateStickerText,
+  validateImageStickerText,
   renderImageSticker,
   renderTextSticker,
   getSafeImageMimeType,

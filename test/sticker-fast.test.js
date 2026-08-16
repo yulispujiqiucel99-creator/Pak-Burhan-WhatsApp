@@ -4,6 +4,7 @@ const sharp = require("sharp");
 const {
   parseStickerCommand,
   parseTextStickerCommand,
+  validateImageStickerText,
   getStickerImageSource,
   getSafeStickerMimeType,
   validateStickerImage,
@@ -22,6 +23,9 @@ function assertWebp(buffer) {
 test("test cepat: parser menerima command sticker gambar dan teks", () => {
   assert.deepEqual(parseStickerCommand("!stiker"), { mode: "image" });
   assert.deepEqual(parseStickerCommand("!sticker"), { mode: "image" });
+  assert.deepEqual(parseStickerCommand("! stiker CIHUY"), { mode: "image-text", text: "CIHUY" });
+  assert.equal(validateImageStickerText("CIHUY").text, "CIHUY");
+  assert.equal(validateImageStickerText("TERLALU PANJANG").error, "too_long");
   assert.deepEqual(parseTextStickerCommand("!brat apasihhh 😒"), {
     style: "brat",
     text: "apasihhh 😒",
@@ -44,6 +48,7 @@ test("test cepat: validasi media dan teks menolak input berisiko", () => {
   assert.equal(validateStickerText("  halo   pak  ").text, "halo pak");
   assert.equal(validateStickerText("").error, "empty");
   assert.equal(validateStickerText("x".repeat(181)).error, "too_long");
+  assert.deepEqual(validateStickerText("halo nama aku Yono", 10).lines, ["halo nama", "aku Yono"]);
 });
 
 test("test cepat: gambar langsung dan quoted image ditemukan", () => {
@@ -78,7 +83,7 @@ test("test cepat: renderer menghasilkan WebP sticker", async () => {
   const imageSticker = await renderImageSticker(source);
   assertWebp(imageSticker);
 
-  const bratSticker = await renderTextSticker("apasihhh 😒", "brat");
+  const bratSticker = await renderTextSticker("halo nama aku Yono", "brat");
   assert.equal(bratSticker.error, undefined);
   assertWebp(bratSticker.buffer);
 
