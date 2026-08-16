@@ -2528,11 +2528,34 @@ async function handleMessage(sock, msg) {
 
     const naturalSchedule = parseNaturalScheduleRequest(text);
     if (naturalSchedule) {
-      await sock.sendMessage(
-        jid,
-        { text: formatClassScheduleMessage(naturalSchedule.dayKey, naturalSchedule.targetDate) },
-        { quoted: msg }
-      );
+      const inviteCode = extractWhatsAppGroupInviteCode(text);
+      if (inviteCode) {
+        if (isGroup || senderLid !== BOT_SETTINGS.private_allowed_lid) {
+          await sock.sendMessage(jid, { text: "Permintaan jadwal dengan tautan grup hanya dapat dipakai admin melalui DM ya." }, { quoted: msg });
+          return;
+        }
+        try {
+          const { groupJid, subject } = await resolveScheduleGroupFromInvite(sock, inviteCode);
+          BOT_STATE.classScheduleGroupJid = groupJid;
+          BOT_STATE.lastClassScheduleDeliveryKey = "";
+          saveBotState();
+          await sendClassScheduleContent(sock, groupJid, naturalSchedule.dayKey, naturalSchedule.targetDate, { includeAudio: true });
+          await sock.sendMessage(
+            jid,
+            { text: `✅ Audio dan teks jadwal ${naturalSchedule.dayKey} sudah dikirim ke grup *${subject}*.` },
+            { quoted: msg }
+          );
+        } catch (error) {
+          console.warn("Pengiriman jadwal natural ke grup gagal:", error.message);
+          await sock.sendMessage(
+            jid,
+            { text: "Maaf, jadwal belum bisa dikirim ke grup tujuan. Pastikan akun bot sudah menjadi anggota grup dari tautan tersebut, lalu coba lagi ya." },
+            { quoted: msg }
+          );
+        }
+        return;
+      }
+      await sendClassScheduleContent(sock, jid, naturalSchedule.dayKey, naturalSchedule.targetDate, { includeAudio: true, quoted: msg });
       return;
     }
 

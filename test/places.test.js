@@ -332,6 +332,12 @@ test("membaca hari jadwal dan hanya mengirim pada pukul 17.00 atau 20.00 WIB", (
   assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-17T11:00:00.000Z")), false);
 });
 
+test("memahami permintaan jadwal natural yang menyertakan tautan grup", () => {
+  const request = parseNaturalScheduleRequest("Pak tolong kirim jadwal hari Minggu ke https://chat.whatsapp.com/Kp4ULXH1ABh3OS2niLCe8P?s=sh", new Date("2026-08-14T10:00:00.000Z"));
+  assert.equal(request.dayKey, "minggu");
+  assert.equal(formatClassScheduleDate(request.targetDate), "16 Agustus 2026, minggu");
+});
+
 test("memahami pertanyaan jadwal natural untuk hari ini, besok, dan nama hari", () => {
   const fridayWib = new Date("2026-08-14T10:00:00.000Z");
   const tomorrow = parseNaturalScheduleRequest("Pak, jadwal besok apa?", fridayWib);
