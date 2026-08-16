@@ -149,3 +149,47 @@ Untuk menghubungkan nomor WhatsApp yang berbeda, hapus folder `auth_info` pada v
 ## Penanganan Error Groq
 
 Bot memakai **Groq Chat Completions API**, menyimpan maksimal **4 putaran** percakapan sebagai konteks agar penggunaan token lebih terkendali, dan menyertakan tanggal serta jam terkini sesuai `BOT_TIMEZONE` pada setiap permintaan AI. Riwayat privat dan riwayat grup dipisahkan menurut sumber chat sehingga konteks chat privat tidak dipakai pada grup. Jika Groq membalas **429**, bot mencoba key berikutnya dari `GROQ_API_KEYS` tanpa menuliskan rahasia ke log. Pesan yang jelas tetap ditampilkan untuk kode **404**, **429**, dan **401/403**. Detail kesalahan API dicatat pada log Railway agar konfigurasi dapat diperiksa tanpa membocorkan API key ke chat.
+
+
+> Catatan konsep audio Tahun Baru versi Vinn: nuansa haru sekaligus bahagia. Isi utama tentang Pak Burhan yang sudah menemani murid hampir satu tahun, waktu kebersamaan yang mulai menipis, dan sebentar lagi mereka naik kelas. Audio referensi Vinn: `/home/ubuntu/upload/AhaTik_suaraasli-vinn_a3e25476-caf4-465a-90bd-9badfed7e848.mp3`. Catatan ini belum menjadi fitur atau jadwal aktif; masih tersisa empat hari khusus untuk dirancang.
+
+Catatan konsep audio Idulfitri versi Xiszzx: suasana perayaan kemenangan setelah Ramadan, saling memaafkan, berkumpul bersama keluarga, dan ucapan hangat dari Pak Burhan untuk murid-murid. Audio referensi: `/home/ubuntu/upload/AhaTik_suaraasli-xiszzx_93fa45d2-737e-4515-a1f3-db183616ef46.mp3`. Naskah final dan jadwal belum dibuat.
+
+
+Catatan konsep audio Iduladha: gunakan referensi takbiran `/home/ubuntu/upload/AhaTik_TakbiranIdulAdha_3a9bc8c0-a0c2-4147-a97a-448c241afc39.mp3`. Nuansanya mengikuti nama dan isi referensi: takbir, perayaan Iduladha, dan ucapan hangat Pak Burhan. Audio ini bukan referensi Idulfitri.
+
+
+Catatan konsep audio Kemerdekaan RI: gunakan audio referensi `/home/ubuntu/upload/AhaTik_suaraasli-class7¹¹😏😻_973c5544-83d2-4a8e-ab6a-f4bbe044d518.mp3`. Naskah akan dibuat sendiri dengan suasana semangat nasionalisme yang cocok untuk murid kelas 7.
+
+Catatan konsep audio Natal: gunakan audio referensi `/home/ubuntu/upload/AhaTik_AllIWantForChristmasIsYou_34e11ce1-b697-42e9-a4e0-97b8fac05c40.mp3`. Naskah akan menekankan toleransi dan penghormatan kepada teman yang merayakan, dengan bahasa netral dan tidak memaksakan keyakinan.
+
+
+## Kalender Hari Raya Dinamis
+
+Bot memeriksa tanggal Idulfitri dan Iduladha secara otomatis melalui pencarian internet sekitar **21 hari sebelum perkiraan hari raya**. Hasil hanya diterima jika tanggal yang sama ditemukan pada sedikitnya dua sumber resmi yang diizinkan, sehingga satu hasil pencarian yang keliru tidak langsung mengubah kalender.
+
+Tanggal yang sudah dikonfirmasi disimpan pada `data/bot_state.json` di volume Railway bersama sumber dan waktu konfirmasinya. Penyimpanan dibuat berdasarkan tahun berjalan sehingga bot dapat terus dipakai sampai masa kelulusan tanpa mengganti tanggal secara manual setiap tahun. Pada tanggal hari raya, jadwal kelas diganti menjadi informasi libur.
+
+Tepat pukul **08.10 WIB pada H-1**, bot mengirim satu pesan pengingat ke grup jadwal aktif. Status pengiriman memakai kunci perayaan dan tanggal, sehingga restart atau pemeriksaan scheduler berulang tidak mengirim pesan ganda. Jika tanggal resmi belum ditemukan, bot tidak menebak dan akan mencoba lagi pada pemeriksaan harian berikutnya.
+
+Fitur ini memakai `TAVILY_API_KEY` yang sama dengan pencarian internet. Jika key tidak tersedia atau sumber resmi belum memberikan tanggal yang dapat diverifikasi, fitur pencarian kalender tidak mengubah jadwal dan tidak mengganggu jadwal kelas biasa.
+
+### Format status kalender
+
+```json
+{
+  "holidayCalendar": {
+    "idulfitri": {
+      "label": "Idulfitri",
+      "dateKey": "YYYY-MM-DD",
+      "sources": ["domain-sumber-1", "domain-sumber-2"],
+      "confirmedAt": "ISO-8601"
+    }
+  },
+  "lastHolidayNotificationKeys": {
+    "idulfitri": "idulfitri-YYYY-MM-DD-h1"
+  }
+}
+```
+
+Audio khusus hari raya belum diaktifkan oleh mekanisme ini karena aset audionya belum berada di repository. Saat aset final sudah tersedia, pengiriman audio dapat ditambahkan tanpa mengubah aturan tanggal dan anti-duplikasi.

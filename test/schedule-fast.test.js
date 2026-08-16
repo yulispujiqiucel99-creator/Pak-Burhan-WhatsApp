@@ -8,6 +8,10 @@ const {
   sendClassScheduleContent,
   WEEKEND_AUDIO_DELIVERY_MINUTES,
   isClassScheduleDeliveryTime,
+  parseIndonesianDate,
+  getOfficialHolidayDate,
+  formatHolidayMessage,
+  HOLIDAY_NOTIFICATION_MINUTES,
 } = require("../index");
 
 const WEEKEND_DAYS = ["sabtu", "minggu"];
@@ -64,6 +68,26 @@ test("test cepat: handler mengirim voice note lalu teks untuk akhir pekan", asyn
   assert.equal(sent[0].content.mimetype, "audio/ogg; codecs=opus");
   assert.match(sent[1].content.text, /\\*INFORMASI MINGGU\\*/);
   assert.match(sent[1].content.text, /Hari ini libur/);
+});
+
+test("test cepat: tanggal Idulfitri hanya dikonfirmasi dari dua sumber resmi", () => {
+  assert.equal(parseIndonesianDate("Idulfitri jatuh pada 10 Maret 2027")?.toISOString(), "2027-03-10T00:00:00.000Z");
+  const confirmed = getOfficialHolidayDate("idulfitri", [
+    { title: "Jadwal Idulfitri 2027", content: "Idulfitri 10 Maret 2027", url: "https://kemenag.go.id/berita/kalender" },
+    { title: "Pemerintah menetapkan Idulfitri", content: "Idul Fitri 10 Maret 2027", url: "https://kemenkopmk.go.id/artikel/libur" },
+  ]);
+  assert.equal(confirmed?.dateKey, "2027-03-10");
+  assert.equal(getOfficialHolidayDate("idulfitri", [
+    { title: "Idulfitri 10 Maret 2027", content: "", url: "https://kemenag.go.id/a" },
+  ]), null);
+});
+
+test("test cepat: pesan H-1 menyebut hari raya dan jadwal libur", () => {
+  assert.equal(HOLIDAY_NOTIFICATION_MINUTES, 8 * 60 + 10);
+  const message = formatHolidayMessage({ label: "Idulfitri", dateKey: "2027-03-10" }, new Date("2027-03-10T00:00:00.000Z"), "PENGINGAT H-1 IDULFITRI");
+  assert.match(message, /PENGINGAT H-1 IDULFITRI/);
+  assert.match(message, /Idulfitri/);
+  assert.match(message, /tidak ada jadwal pelajaran/);
 });
 
 console.log("Test cepat jadwal selesai: tanpa WhatsApp, Supabase, Groq, VirusTotal, atau Jina.");
