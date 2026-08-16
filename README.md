@@ -114,11 +114,9 @@ Bot hanya memproses foto JPG, PNG, atau WebP dengan ukuran maksimum **20 MB**. S
 
 ## Membuat Sticker
 
-Fitur sticker menggunakan pemrosesan lokal dan tidak memanggil Groq, Supabase, VirusTotal, atau Jina. Di grup, command harus diawali mention bot sesuai aturan umum. Untuk mengubah gambar menjadi sticker, kirim gambar dengan caption **`@bot !stiker`**, reply gambar lalu kirim **`@bot !stiker`**, atau gunakan alias **`!sticker`**.
+Fitur sticker hanya mendukung konversi gambar menjadi sticker menggunakan pemrosesan lokal. Di grup, command harus diawali mention bot sesuai aturan umum. Kirim gambar dengan caption **`@bot !stiker`**, reply gambar lalu kirim **`@bot !stiker`**, atau gunakan alias **`!sticker`**.
 
-Gambar juga dapat diberi teks meme singkat menggunakan **`@bot !stiker CIHUY`** atau **`@bot ! stiker CIHUY`**. Teks overlay gambar dibatasi maksimal 8 huruf; jika lebih, bot mengirim peringatan dan tidak membuat sticker. Template overlay memakai huruf kapital tebal, warna putih, dan outline hitam.
-
-Untuk sticker teks yang lebih panjang, gunakan **`@bot !brat halo nama aku Yono`** atau **`@bot !iqc halo nama aku Yono`**. Keduanya mengecilkan font secara otomatis dan membungkus teks berdasarkan kata, sehingga tidak memotong kata di tengah. Ukuran gambar dibatasi maksimal 10 MB dan teks template dibatasi maksimal 180 karakter. Hasil diproses sebagai WebP di memori sementara, lalu dikirim dan tidak disimpan ke Supabase, `MEMORY`, atau repository.
+Bot menerima gambar JPG, PNG, dan WebP dengan ukuran maksimum **10 MB**. Gambar diproses sementara menjadi WebP, lalu dikirim sebagai sticker dan tidak disimpan ke Supabase, `MEMORY`, atau repository. Fitur sticker teks, Brat, IQC, dan overlay teks tidak tersedia.
 
 ## Jadwal Kelas VII D
 

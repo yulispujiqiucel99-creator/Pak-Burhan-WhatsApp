@@ -3,14 +3,12 @@ const assert = require("node:assert/strict");
 const sharp = require("sharp");
 const {
   parseStickerCommand,
-  parseTextStickerCommand,
-  validateImageStickerText,
+  getImageMessage,
+  getQuotedImageMessage,
   getStickerImageSource,
   getSafeStickerMimeType,
   validateStickerImage,
-  validateStickerText,
   renderImageSticker,
-  renderTextSticker,
 } = require("../index");
 
 function assertWebp(buffer) {
@@ -20,76 +18,48 @@ function assertWebp(buffer) {
   assert.equal(buffer.toString("ascii", 8, 12), "WEBP");
 }
 
-test("test cepat: parser menerima command sticker gambar dan teks", () => {
+test("test cepat: hanya command sticker gambar yang dikenali", () => {
   assert.deepEqual(parseStickerCommand("!stiker"), { mode: "image" });
   assert.deepEqual(parseStickerCommand("!sticker"), { mode: "image" });
-  assert.deepEqual(parseStickerCommand("! stiker CIHUY"), { mode: "image-text", text: "CIHUY" });
-  assert.equal(validateImageStickerText("CIHUY").text, "CIHUY");
-  assert.equal(validateImageStickerText("TERLALU PANJANG").error, "too_long");
-  assert.deepEqual(parseTextStickerCommand("!brat apasihhh 😒"), {
-    style: "brat",
-    text: "apasihhh 😒",
-    error: null,
-  });
-  assert.deepEqual(parseTextStickerCommand("!iqc yang ytta aja"), {
-    style: "iqc",
-    text: "yang ytta aja",
-    error: null,
-  });
-  assert.equal(parseTextStickerCommand("!brat").error, "empty");
+  assert.deepEqual(parseStickerCommand("! stiker"), { mode: "image" });
+  assert.equal(parseStickerCommand("!stiker CIHUY"), null);
+  assert.equal(parseStickerCommand("!brat apasihhh"), null);
+  assert.equal(parseStickerCommand("!iqc yang ytta aja"), null);
 });
 
-test("test cepat: validasi media dan teks menolak input berisiko", () => {
+test("test cepat: validasi media menolak input tidak aman", () => {
   assert.equal(getSafeStickerMimeType({ mimetype: "image/jpeg" }), "image/jpeg");
   assert.equal(getSafeStickerMimeType({ mimetype: "image/png" }), "image/png");
   assert.equal(getSafeStickerMimeType({ mimetype: "video/mp4" }), null);
   assert.equal(validateStickerImage(Buffer.from("ok"), { mimetype: "image/png" }).error, undefined);
   assert.equal(validateStickerImage(Buffer.alloc(10 * 1024 * 1024 + 1), { mimetype: "image/png" }).error, "too_large");
-  assert.equal(validateStickerText("  halo   pak  ").text, "halo pak");
-  assert.equal(validateStickerText("").error, "empty");
-  assert.equal(validateStickerText("x".repeat(181)).error, "too_long");
-  assert.deepEqual(validateStickerText("halo nama aku Yono", 10).lines, ["halo nama", "aku Yono"]);
 });
 
 test("test cepat: gambar langsung dan quoted image ditemukan", () => {
   const imageMessage = { mimetype: "image/jpeg", fileLength: "10" };
-  const direct = getStickerImageSource(
-    { message: { imageMessage } },
-    { imageMessage }
-  );
+  const direct = getStickerImageSource({ message: { imageMessage } }, { imageMessage });
+  assert.equal(getImageMessage({ imageMessage }), imageMessage);
   assert.equal(direct.message, imageMessage);
-  assert.equal(direct.source.message.imageMessage, imageMessage);
 
   const quotedImage = { mimetype: "image/png", fileLength: "10" };
-  const reply = getStickerImageSource(
-    {
-      key: { remoteJid: "123@g.us" },
-      message: {
-        extendedTextMessage: {
-          contextInfo: { stanzaId: "quoted-1", quotedMessage: { imageMessage: quotedImage } },
-        },
+  const reply = {
+    key: { remoteJid: "123@g.us" },
+    message: {
+      extendedTextMessage: {
+        contextInfo: { stanzaId: "quoted-1", quotedMessage: { imageMessage: quotedImage } },
       },
     },
-    { extendedTextMessage: { contextInfo: { quotedMessage: { imageMessage: quotedImage } } } }
-  );
-  assert.equal(reply.message, quotedImage);
-  assert.equal(reply.source.message.imageMessage, quotedImage);
+  };
+  assert.ok(getQuotedImageMessage(reply));
+  assert.equal(getStickerImageSource(reply, { extendedTextMessage: {} }).message, quotedImage);
 });
 
-test("test cepat: renderer menghasilkan WebP sticker", async () => {
+test("test cepat: renderer menghasilkan WebP sticker gambar tanpa overlay teks", async () => {
   const source = await sharp({
     create: { width: 80, height: 40, channels: 4, background: { r: 120, g: 80, b: 220, alpha: 1 } },
   }).png().toBuffer();
   const imageSticker = await renderImageSticker(source);
   assertWebp(imageSticker);
-
-  const bratSticker = await renderTextSticker("halo nama aku Yono", "brat");
-  assert.equal(bratSticker.error, undefined);
-  assertWebp(bratSticker.buffer);
-
-  const iqcSticker = await renderTextSticker("yang ytta aja", "iqc");
-  assert.equal(iqcSticker.error, undefined);
-  assertWebp(iqcSticker.buffer);
 });
 
-console.log("Test cepat sticker selesai: tanpa WhatsApp, Supabase, Groq, VirusTotal, Jina, atau jaringan eksternal.");
+console.log("Test cepat sticker selesai: hanya konversi gambar, tanpa Brat/IQC, tanpa API eksternal.");
