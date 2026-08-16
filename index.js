@@ -22,6 +22,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { execFile } = require("child_process");
 const { promisify } = require("util");
+const FormData = require("form-data");
 const execFileAsync = promisify(execFile);
 
 const BOT_NUMBER = (process.env.BOT_NUMBER || "").replace(/\D/g, "");
@@ -53,11 +54,21 @@ const MAX_VISION_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_STICKER_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_HD_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_HD_OUTPUT_BYTES = 15 * 1024 * 1024;
-const MAX_HD_OUTPUT_DIMENSION = 2560;
+const MAX_HD_OUTPUT_DIMENSION = 1440;
 const REAL_ESRGAN_DIR = path.join(__dirname, "vendor", "realesrgan");
 const REAL_ESRGAN_BIN = path.join(REAL_ESRGAN_DIR, "runtime");
 const REAL_ESRGAN_MODELS = path.join(REAL_ESRGAN_DIR, "models");
 const REAL_ESRGAN_ENABLED = process.env.REAL_ESRGAN_ENABLED !== "0";
+const DEAPI_API_KEY = (process.env.DEAPI_API_KEY || "").trim();
+const DEAPI_MODEL = (process.env.DEAPI_MODEL || "RealESRGAN_x4").trim();
+const DEAPI_ENABLED = String(process.env.DEAPI_ENABLED || "true").toLowerCase() !== "false";
+const DEAPI_BASE_URL = (process.env.DEAPI_BASE_URL || "https://api.deapi.ai").replace(/\/+$/, "");
+const DEAPI_MAX_LONG_SIDE = Math.min(1440, Math.max(256, Number(process.env.DEAPI_MAX_LONG_SIDE || 1440)));
+const DEAPI_MAX_REQUEST_BYTES = 10 * 1024 * 1024;
+const DEAPI_POLL_INTERVAL_MS = 1500;
+const DEAPI_TIMEOUT_MS = 120000;
+const DEAPI_DAILY_REQUEST_LIMIT = Math.max(1, Number(process.env.DEAPI_DAILY_REQUEST_LIMIT || 10));
+const HD_RESULT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const STICKER_CANVAS_SIZE = 512;
 const WEEKEND_AUDIO_PATHS = {
   sabtu: (process.env.WEEKEND_AUDIO_SATURDAY_PATH || path.join(__dirname, "assets", "weekend-audio", "sabtu.mp3")).trim(),
@@ -92,6 +103,7 @@ const BOT_RUNTIME = {
 
 const AUTH_DIR = path.join(__dirname, "auth_info");
 const DATA_DIR = path.join(__dirname, "data");
+const HD_RESULT_CACHE_DIR = path.join(DATA_DIR, "hd-cache");
 const MEMORY_FILE = path.join(DATA_DIR, "memory.json");
 const PROFILES_FILE = path.join(DATA_DIR, "profiles.json");
 const QUESTION_USAGE_FILE = path.join(DATA_DIR, "question_usage.json");
@@ -751,6 +763,7 @@ function buildAdminStatusReply(lid, now = Date.now()) {
     `Geoapify: ${GEOAPIFY_API_KEY ? "siap" : "belum dikonfigurasi"}`,
     `VirusTotal: ${VIRUSTOTAL_API_KEY ? "siap" : "belum dikonfigurasi"}`,
     `Jina Reader: ${JINA_API_KEY ? "siap dengan API key" : "siap tanpa API key (batas rendah)"}`,
+    `deAPI HD: ${DEAPI_API_KEY && DEAPI_ENABLED ? `siap (${DEAPI_MODEL}, ${getDeApiUsageStatus().remaining}/${DEAPI_DAILY_REQUEST_LIMIT} request harian tersisa)` : "fallback CPU aktif"}`,
     `Kuota admin: ${quota.used}/${DAILY_QUESTION_LIMIT} terpakai, ${quota.remaining} tersisa`,
     `Reset kuota admin: ${resetText}`,
     `Grup: ${groupMode}`,
@@ -1186,9 +1199,89 @@ function getAutoLinkCacheKey(url) {
   }
 }
 
+function clearHdResultCache() {
+  try {
+    if (fs.existsSync(HD_RESULT_CACHE_DIR)) fs.rmSync(HD_RESULT_CACHE_DIR, { recursive: true, force: true });
+  } catch (error) {
+    console.warn("Cache foto HD gagal dibersihkan:", error.message);
+  }
+}
+
+function getHdCacheFilePath(cacheKey) {
+  return path.join(HD_RESULT_CACHE_DIR, `${cacheKey}.jpg`);
+}
+
+function getHdAutoMode(imageMetadata) {
+  const longestSide = Math.max(Number(imageMetadata?.width || 0), Number(imageMetadata?.height || 0));
+  if (!longestSide) return { mode: "cpu", scale: 1, longestSide: 0 };
+  if (longestSide <= 480) return { mode: "deapi", scale: 4, longestSide };
+  if (longestSide <= 720) return { mode: "deapi", scale: 2, longestSide };
+  return { mode: "cpu", scale: 1, longestSide };
+}
+
+function getDeApiUsageStatus(date = new Date()) {
+  const dateKey = getZonedClockParts(date).dateKey;
+  if (!BOT_STATE.deapiUsage || BOT_STATE.deapiUsage.dateKey !== dateKey) {
+    BOT_STATE.deapiUsage = { dateKey, count: 0 };
+    saveBotState();
+  }
+  const count = Number(BOT_STATE.deapiUsage.count || 0);
+  return { dateKey, count, remaining: Math.max(0, DEAPI_DAILY_REQUEST_LIMIT - count) };
+}
+
+function canUseDeApi(date = new Date()) {
+  if (!DEAPI_ENABLED || !DEAPI_API_KEY) return false;
+  return getDeApiUsageStatus(date).remaining > 0;
+}
+
+function recordDeApiUsage(date = new Date()) {
+  const status = getDeApiUsageStatus(date);
+  BOT_STATE.deapiUsage = { dateKey: status.dateKey, count: status.count + 1 };
+  saveBotState();
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function upscaleWithDeApi(imageBuffer, imageMetadata, autoMode) {
+  if (!canUseDeApi()) throw new Error("deapi_unavailable_or_daily_limit");
+  const input = await sharp(imageBuffer, { failOn: "error" })
+    .rotate()
+    .resize({ width: Math.min(Number(imageMetadata.width || 0), 720), height: Math.min(Number(imageMetadata.height || 0), 720), fit: "inside", withoutEnlargement: true, kernel: sharp.kernel.lanczos3 })
+    .jpeg({ quality: 88, mozjpeg: true })
+    .toBuffer();
+  if (input.length > DEAPI_MAX_REQUEST_BYTES) throw new Error("deapi_input_too_large");
+
+  const form = new FormData();
+  form.append("model", DEAPI_MODEL);
+  form.append("image", input, { filename: "pak-burhan-hd-input.jpg", contentType: "image/jpeg" });
+  const headers = { ...form.getHeaders(), Accept: "application/json", Authorization: `Bearer ${DEAPI_API_KEY}` };
+  const submitted = await axios.post(`${DEAPI_BASE_URL}/api/v2/images/upscales`, form, { headers, timeout: 30000, maxContentLength: DEAPI_MAX_REQUEST_BYTES, maxBodyLength: DEAPI_MAX_REQUEST_BYTES });
+  const requestId = submitted.data?.data?.request_id || submitted.data?.request_id;
+  if (!requestId) throw new Error("deapi_missing_request_id");
+  recordDeApiUsage();
+
+  const deadline = Date.now() + DEAPI_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const statusResponse = await axios.get(`${DEAPI_BASE_URL}/api/v2/jobs/${encodeURIComponent(requestId)}`, { headers: { Accept: "application/json", Authorization: `Bearer ${DEAPI_API_KEY}` }, timeout: 20000 });
+    const job = statusResponse.data?.data || {};
+    if (job.status === "done") {
+      const resultUrl = job.results_alt_formats?.jpg || job.result_url || job.result;
+      if (!resultUrl || typeof resultUrl !== "string" || !/^https?:\/\//i.test(resultUrl)) throw new Error("deapi_missing_result_url");
+      const resultResponse = await axios.get(resultUrl, { responseType: "arraybuffer", timeout: 30000, maxContentLength: MAX_HD_IMAGE_BYTES });
+      return { buffer: Buffer.from(resultResponse.data), autoMode, source: "deapi" };
+    }
+    if (job.status === "error") throw new Error(`deapi_job_failed:${job.error_reason || job.error_message || "unknown"}`);
+    await sleep(DEAPI_POLL_INTERVAL_MS);
+  }
+  throw new Error("deapi_timeout");
+}
+
 function clearAutoLinkCache() {
   const previousSize = AUTO_LINK_CACHE.size;
   AUTO_LINK_CACHE.clear();
+  clearHdResultCache();
   if (previousSize) console.log(`Cache pemeriksaan link otomatis dibersihkan: ${previousSize} entri.`);
 }
 
@@ -1518,6 +1611,32 @@ function runRealEsrgan(inputPath, outputPath) {
 }
 
 async function renderHdImage(imageBuffer) {
+  const metadata = await sharp(imageBuffer, { failOn: "error" }).metadata();
+  const autoMode = getHdAutoMode(metadata);
+  const cacheKey = crypto.createHash("sha256").update(imageBuffer).digest("hex");
+  const cachePath = getHdCacheFilePath(cacheKey);
+  try {
+    if (fs.existsSync(cachePath)) {
+      const cachedStat = fs.statSync(cachePath);
+      if (Date.now() - cachedStat.mtimeMs < HD_RESULT_CACHE_TTL_MS) return fs.readFileSync(cachePath);
+      fs.rmSync(cachePath, { force: true });
+    }
+  } catch (error) {
+    console.warn("Cache foto HD tidak dapat dibaca:", error.message);
+  }
+
+  if (autoMode.mode === "deapi") {
+    try {
+      const remote = await upscaleWithDeApi(imageBuffer, metadata, autoMode);
+      const finalBuffer = await finalizeHdImage(remote.buffer);
+      fs.mkdirSync(HD_RESULT_CACHE_DIR, { recursive: true });
+      fs.writeFileSync(cachePath, finalBuffer);
+      return finalBuffer;
+    } catch (error) {
+      console.warn("deAPI HD gagal, memakai fallback CPU:", error.message);
+    }
+  }
+
   const tmpDir = path.join(DATA_DIR, "hd-tmp");
   const id = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}`;
   const inputPath = path.join(tmpDir, `${id}-input.jpg`);
@@ -1525,7 +1644,7 @@ async function renderHdImage(imageBuffer) {
   fs.mkdirSync(tmpDir, { recursive: true });
   fs.writeFileSync(inputPath, imageBuffer);
   try {
-    if (REAL_ESRGAN_ENABLED && fs.existsSync(REAL_ESRGAN_BIN) && fs.existsSync(REAL_ESRGAN_MODELS)) {
+    if (REAL_ESRGAN_ENABLED && process.env.REAL_ESRGAN_FORCE === "1" && fs.existsSync(REAL_ESRGAN_BIN) && fs.existsSync(REAL_ESRGAN_MODELS)) {
       try {
         await runRealEsrgan(inputPath, outputPath);
         const enhanced = fs.readFileSync(outputPath);
@@ -1534,7 +1653,14 @@ async function renderHdImage(imageBuffer) {
         console.warn("Real-ESRGAN tidak tersedia pada runtime ini, memakai fallback Sharp:", error.message);
       }
     }
-    return await finalizeHdImage(imageBuffer);
+    const finalBuffer = await finalizeHdImage(imageBuffer);
+    try {
+      fs.mkdirSync(HD_RESULT_CACHE_DIR, { recursive: true });
+      fs.writeFileSync(cachePath, finalBuffer);
+    } catch (error) {
+      console.warn("Cache foto HD gagal disimpan:", error.message);
+    }
+    return finalBuffer;
   } finally {
     fs.rmSync(inputPath, { force: true });
     fs.rmSync(outputPath, { force: true });
@@ -2781,7 +2907,16 @@ async function handleMessage(sock, msg) {
           return;
         }
         const hdBuffer = await renderHdImage(imageBuffer);
-        await sock.sendMessage(jid, { image: hdBuffer, mimetype: "image/jpeg", caption: "✅ Foto HD selesai." }, { quoted: msg });
+        if (hdBuffer.length > MAX_HD_OUTPUT_BYTES) {
+          await sock.sendMessage(jid, {
+            document: hdBuffer,
+            mimetype: "image/jpeg",
+            fileName: "foto-hd.jpg",
+            caption: "✅ Foto HD selesai. Ukurannya besar, jadi dikirim sebagai file agar kualitasnya tetap terjaga.",
+          }, { quoted: msg });
+        } else {
+          await sock.sendMessage(jid, { image: hdBuffer, mimetype: "image/jpeg", caption: "✅ Foto HD selesai." }, { quoted: msg });
+        }
       } catch (error) {
         console.warn("Peningkatan foto HD gagal:", error.message);
         await sock.sendMessage(jid, { text: "Maaf, foto belum bisa diperjelas. Coba kirim foto yang lebih kecil ya." }, { quoted: msg });
@@ -3342,6 +3477,7 @@ module.exports = {
   reserveGroupRequest,
   parseImageCommand,
   parseHdCommand,
+  getHdAutoMode,
   renderHdImage,
   parseStickerCommand,
   getImageMessage,

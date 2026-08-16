@@ -12,6 +12,7 @@ const {
   reserveGroupRequest,
   parseImageCommand,
   parseHdCommand,
+  getHdAutoMode,
   renderHdImage,
   getImageMessage,
   getSafeImageMimeType,
@@ -82,6 +83,12 @@ test("!hd menerima semua variasi huruf", () => {
   assert.deepEqual(parseHdCommand("!HD"), { mode: "photo" });
   assert.deepEqual(parseHdCommand("!Hd"), { mode: "photo" });
   assert.equal(parseHdCommand("!hd foto"), null);
+});
+
+test("mode auto HD memilih deAPI 4x, 2x, atau CPU sesuai resolusi", () => {
+  assert.deepEqual(getHdAutoMode({ width: 480, height: 360 }), { mode: "deapi", scale: 4, longestSide: 480 });
+  assert.deepEqual(getHdAutoMode({ width: 720, height: 480 }), { mode: "deapi", scale: 2, longestSide: 720 });
+  assert.deepEqual(getHdAutoMode({ width: 1440, height: 900 }), { mode: "cpu", scale: 1, longestSide: 1440 });
 });
 
 test("renderer foto HD menghasilkan JPEG dengan ukuran aman", async () => {
