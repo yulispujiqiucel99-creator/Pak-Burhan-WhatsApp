@@ -64,7 +64,7 @@ const WEEKEND_AUDIO_PATHS = {
   minggu: (process.env.WEEKEND_AUDIO_SUNDAY_PATH || path.join(__dirname, "assets", "weekend-audio", "minggu.mp3")).trim(),
 };
 const WEEKEND_AUDIO_MAX_SECONDS = 2 * 60;
-const WEEKEND_AUDIO_DELIVERY_MINUTES = 8 * 60 + 10;
+const WEEKEND_AUDIO_DELIVERY_MINUTES = 7 * 60;
 const HOLIDAY_NOTIFICATION_MINUTES = 8 * 60 + 10;
 const HOLIDAY_DISCOVERY_WINDOW_DAYS = 21;
 const HOLIDAY_DISCOVERY_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -2080,6 +2080,17 @@ function getClassScheduleDayKey(date = new Date()) {
   }
 }
 
+function getNextClassScheduleTarget(date = new Date()) {
+  const currentDayKey = getClassScheduleDayKey(date);
+  const daysToAdd = currentDayKey === "sabtu" ? 2 : currentDayKey === "minggu" ? 1 : 1;
+  const targetDate = new Date(date.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+  return {
+    dayKey: getClassScheduleDayKey(targetDate),
+    date: targetDate,
+    dateKey: getZonedClockParts(targetDate).dateKey,
+  };
+}
+
 function formatClassScheduleDate(date = new Date()) {
   try {
     const parts = new Intl.DateTimeFormat("id-ID", {
@@ -2434,11 +2445,11 @@ async function sendClassSchedule(sock, date = new Date()) {
   const deliveryKey = `${dateKey}-${hour}-${minute}`;
   if (BOT_STATE.lastClassScheduleDeliveryKey === deliveryKey) return false;
 
-  const dayKey = getClassScheduleDayKey(date);
+  const target = getNextClassScheduleTarget(date);
   const groupJid = BOT_STATE.classScheduleGroupJid;
-  const holiday = getHolidayForDate(date);
+  const holiday = getHolidayForDate(target.date);
   if (holiday) await sendHolidayScheduleContent(sock, groupJid, holiday);
-  else await sendClassScheduleContent(sock, groupJid, dayKey, date, { includeAudio: true });
+  else await sendClassScheduleContent(sock, groupJid, target.dayKey, target.date, { includeAudio: true });
   BOT_STATE.lastClassScheduleDeliveryKey = deliveryKey;
   saveBotState();
   console.log(`Jadwal kelas terkirim ke grup aktif pada ${deliveryKey}.`);
@@ -3366,6 +3377,7 @@ module.exports = {
   formatClassScheduleMessage,
   sendClassScheduleContent,
   getClassScheduleAudioPath,
+  getNextClassScheduleTarget,
   WEEKEND_AUDIO_DELIVERY_MINUTES,
   formatClassScheduleDate,
   isClassScheduleDeliveryTime,
