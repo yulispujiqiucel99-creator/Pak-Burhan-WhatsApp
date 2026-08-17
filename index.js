@@ -1,6 +1,6 @@
 /**
  * Pak Burhan WhatsApp Bot
- * Baileys + QR / Pairing Code + OpenRouter
+ * Baileys + QR / Pairing Code + Google Gemini
  */
 
 require("dotenv").config();
@@ -26,16 +26,16 @@ const FormData = require("form-data");
 const execFileAsync = promisify(execFile);
 
 const BOT_NUMBER = (process.env.BOT_NUMBER || "").replace(/\D/g, "");
-const GROQ_API_KEYS = [...new Set(
+const GEMINI_API_KEYS = [...new Set(
   [
-    ...(process.env.GROQ_API_KEYS || "").split(","),
-    process.env.GROQ_API_KEY || "",
+    ...(process.env.GEMINI_API_KEYS || "").split(","),
+    process.env.GEMINI_API_KEY || "",
   ]
     .map((key) => key.trim())
     .filter(Boolean)
 )];
-const DEFAULT_GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.1-8b-instant";
-const GROQ_BASE_URL = (process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1").replace(/\/+$/, "");
+const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
+const GEMINI_BASE_URL = (process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta/openai").replace(/\/+$/, "");
 const DEFAULT_PRIVATE_ALLOWED_LID = (process.env.PRIVATE_ALLOWED_LID || "").replace(/\D/g, "");
 const DEFAULT_BOT_TIMEZONE = process.env.BOT_TIMEZONE || "Asia/Jakarta";
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
@@ -49,7 +49,7 @@ const AUTO_LINK_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const AUTO_LINK_CACHE_CLEAR_HOUR = 0;
 const AUTO_LINK_CACHE_CLEAR_MINUTE = 30;
 const GEOAPIFY_API_KEY = (process.env.GEOAPIFY_API_KEY || "").trim();
-const GROQ_VISION_MODEL = (process.env.GROQ_VISION_MODEL || "qwen/qwen3.6-27b").trim();
+const GEMINI_VISION_MODEL = (process.env.GEMINI_VISION_MODEL || process.env.GEMINI_MODEL || "gemini-3.1-flash-lite").trim();
 const MAX_VISION_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_STICKER_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_HD_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -93,7 +93,7 @@ const AUTH_METHOD = (process.env.AUTH_METHOD || "qr").toLowerCase();
 const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || "").trim();
 const SETTINGS_REFRESH_MS = 60 * 1000;
-let activeGroqKeyIndex = 0;
+let activeGeminiKeyIndex = 0;
 const BOT_RUNTIME = {
   startedAt: new Date(),
   connectionState: "menyiapkan",
@@ -242,7 +242,7 @@ const DEFAULT_BOT_SETTINGS = {
   bot_name: "Pak Burhan",
   timezone: DEFAULT_BOT_TIMEZONE,
   private_allowed_lid: DEFAULT_PRIVATE_ALLOWED_LID,
-  groq_model: DEFAULT_GROQ_MODEL,
+  gemini_model: DEFAULT_GEMINI_MODEL,
   max_history_turns: 4,
   mass_mention_terms: ["semua", "everyone", "all", "here"],
   commands: DEFAULT_COMMANDS,
@@ -299,7 +299,7 @@ function normaliseBotSettings(rawSettings) {
     bot_name: typeof raw.bot_name === "string" && raw.bot_name.trim() ? raw.bot_name.trim() : DEFAULT_BOT_SETTINGS.bot_name,
     timezone: typeof raw.timezone === "string" && raw.timezone.trim() ? raw.timezone.trim() : DEFAULT_BOT_SETTINGS.timezone,
     private_allowed_lid: String(raw.private_allowed_lid || DEFAULT_BOT_SETTINGS.private_allowed_lid).replace(/\D/g, ""),
-    groq_model: typeof raw.groq_model === "string" && raw.groq_model.trim() ? raw.groq_model.trim() : DEFAULT_BOT_SETTINGS.groq_model,
+    gemini_model: typeof raw.gemini_model === "string" && raw.gemini_model.trim() ? raw.gemini_model.trim() : DEFAULT_BOT_SETTINGS.gemini_model,
     max_history_turns: Number.isInteger(maxHistoryTurns) && maxHistoryTurns >= 1 && maxHistoryTurns <= 12 ? maxHistoryTurns : DEFAULT_BOT_SETTINGS.max_history_turns,
     mass_mention_terms: massMentionTerms.length ? [...new Set(massMentionTerms)] : DEFAULT_BOT_SETTINGS.mass_mention_terms,
     commands: mergeCommands(commands),
@@ -758,8 +758,8 @@ function buildAdminStatusReply(lid, now = Date.now()) {
     "",
     `WhatsApp: ${BOT_RUNTIME.connectionState}`,
     `Terhubung sejak: ${connectedSince}`,
-    `Groq: ${GROQ_API_KEYS.length ? `siap (${GROQ_API_KEYS.length} key dikonfigurasi)` : "belum dikonfigurasi"}`,
-    `Model Groq: ${BOT_SETTINGS.groq_model}`,
+    `Gemini: ${GEMINI_API_KEYS.length ? `siap (${GEMINI_API_KEYS.length} key dikonfigurasi)` : "belum dikonfigurasi"}`,
+    `Model Gemini: ${BOT_SETTINGS.gemini_model}`,
     `Geoapify: ${GEOAPIFY_API_KEY ? "siap" : "belum dikonfigurasi"}`,
     `VirusTotal: ${VIRUSTOTAL_API_KEY ? "siap" : "belum dikonfigurasi"}`,
     `Jina Reader: ${JINA_API_KEY ? "siap dengan API key" : "siap tanpa API key (batas rendah)"}`,
@@ -1921,8 +1921,8 @@ function getCurrentDateTime() {
 }
 
 async function askAI(userId, prompt, profile, options = {}) {
-  if (!GROQ_API_KEYS.length) {
-    return "Waduh, GROQ_API_KEYS belum diatur. Hubungi admin ya.";
+  if (!GEMINI_API_KEYS.length) {
+    return "Waduh, GEMINI_API_KEYS belum diatur. Hubungi admin ya.";
   }
 
   const botName = BOT_SETTINGS.bot_name;
@@ -1943,21 +1943,18 @@ async function askAI(userId, prompt, profile, options = {}) {
   ];
 
   let lastError;
-  for (let attempt = 0; attempt < GROQ_API_KEYS.length; attempt += 1) {
-    const keyIndex = (activeGroqKeyIndex + attempt) % GROQ_API_KEYS.length;
-    const apiKey = GROQ_API_KEYS[keyIndex];
+  for (let attempt = 0; attempt < GEMINI_API_KEYS.length; attempt += 1) {
+    const keyIndex = (activeGeminiKeyIndex + attempt) % GEMINI_API_KEYS.length;
+    const apiKey = GEMINI_API_KEYS[keyIndex];
 
     try {
       const { data } = await axios.post(
-        `${GROQ_BASE_URL}/chat/completions`,
+        `${GEMINI_BASE_URL}/chat/completions`,
         {
-          model: BOT_SETTINGS.groq_model,
+          model: BOT_SETTINGS.gemini_model,
           messages,
           temperature: 0.55,
           max_completion_tokens: options.maxCompletionTokens || 2048,
-          ...(BOT_SETTINGS.groq_model.startsWith("openai/gpt-oss-")
-            ? { reasoning_effort: "medium", include_reasoning: false }
-            : {}),
         },
         {
           headers: {
@@ -1968,7 +1965,7 @@ async function askAI(userId, prompt, profile, options = {}) {
         }
       );
 
-      activeGroqKeyIndex = keyIndex;
+      activeGeminiKeyIndex = keyIndex;
       const answer = data?.choices?.[0]?.message?.content?.trim();
       return (
         answer?.slice(0, 3500) ||
@@ -1978,11 +1975,11 @@ async function askAI(userId, prompt, profile, options = {}) {
       lastError = error;
       const status = error.response?.status;
       const detail = error.response?.data?.error?.message || error.message;
-      console.error(`Groq API error pada key ${keyIndex + 1}/${GROQ_API_KEYS.length}:`, status || "-", detail);
+      console.error(`Gemini API error pada key ${keyIndex + 1}/${GEMINI_API_KEYS.length}:`, status || "-", detail);
 
-      if (status === 429 && attempt < GROQ_API_KEYS.length - 1) {
-        const nextKeyIndex = (keyIndex + 1) % GROQ_API_KEYS.length;
-        console.warn(`Batas Groq tercapai; mencoba key ${nextKeyIndex + 1}/${GROQ_API_KEYS.length}.`);
+      if (status === 429 && attempt < GEMINI_API_KEYS.length - 1) {
+        const nextKeyIndex = (keyIndex + 1) % GEMINI_API_KEYS.length;
+        console.warn(`Batas Gemini tercapai; mencoba key ${nextKeyIndex + 1}/${GEMINI_API_KEYS.length}.`);
         continue;
       }
       break;
@@ -1991,13 +1988,13 @@ async function askAI(userId, prompt, profile, options = {}) {
 
   const status = lastError?.response?.status;
   if (status === 404) {
-    return "Maaf, model Groq yang dipilih belum tersedia. Hubungi admin ya.";
+    return "Maaf, model Gemini yang dipilih belum tersedia. Hubungi admin ya.";
   }
   if (status === 429) {
-    return "Maaf, seluruh key Groq sedang mencapai batas penggunaan. Coba lagi beberapa saat ya.";
+    return "Maaf, seluruh key Gemini sedang mencapai batas penggunaan. Coba lagi beberapa saat ya.";
   }
   if (status === 401 || status === 403) {
-    return "Maaf, konfigurasi API Groq belum valid. Hubungi admin ya.";
+    return "Maaf, konfigurasi API Gemini belum valid. Hubungi admin ya.";
   }
   return "Maaf, sedang ada gangguan. Coba lagi sebentar ya.";
 }
@@ -2017,8 +2014,8 @@ function sanitizeVisionReply(content) {
 }
 
 async function askVision(question, imageBuffer, mimeType, profile) {
-  if (!GROQ_API_KEYS.length) {
-    return "Waduh, GROQ_API_KEYS belum diatur. Hubungi admin ya.";
+  if (!GEMINI_API_KEYS.length) {
+    return "Waduh, GEMINI_API_KEYS belum diatur. Hubungi admin ya.";
   }
 
   const imageDataUrl = `data:${mimeType};base64,${imageBuffer.toString("base64")}`;
@@ -2037,18 +2034,17 @@ async function askVision(question, imageBuffer, mimeType, profile) {
   ];
 
   let lastError;
-  for (let attempt = 0; attempt < GROQ_API_KEYS.length; attempt += 1) {
-    const keyIndex = (activeGroqKeyIndex + attempt) % GROQ_API_KEYS.length;
-    const apiKey = GROQ_API_KEYS[keyIndex];
+  for (let attempt = 0; attempt < GEMINI_API_KEYS.length; attempt += 1) {
+    const keyIndex = (activeGeminiKeyIndex + attempt) % GEMINI_API_KEYS.length;
+    const apiKey = GEMINI_API_KEYS[keyIndex];
     try {
       const { data } = await axios.post(
-        `${GROQ_BASE_URL}/chat/completions`,
+        `${GEMINI_BASE_URL}/chat/completions`,
         {
-          model: GROQ_VISION_MODEL,
+          model: GEMINI_VISION_MODEL,
           messages,
           temperature: 0.45,
           max_completion_tokens: 1400,
-          reasoning_effort: "none",
         },
         {
           headers: {
@@ -2058,15 +2054,15 @@ async function askVision(question, imageBuffer, mimeType, profile) {
           timeout: 90000,
         }
       );
-      activeGroqKeyIndex = keyIndex;
+      activeGeminiKeyIndex = keyIndex;
       const answer = sanitizeVisionReply(data?.choices?.[0]?.message?.content);
       return answer?.slice(0, 5000) || "Maaf, gambar ini belum bisa Pak Burhan pahami dengan jelas. Coba kirim foto yang lebih terang atau fokus ya.";
     } catch (error) {
       lastError = error;
       const status = error.response?.status;
       const detail = error.response?.data?.error?.message || error.message;
-      console.error(`Groq Vision error pada key ${keyIndex + 1}/${GROQ_API_KEYS.length}:`, status || "-", detail);
-      if (status === 429 && attempt < GROQ_API_KEYS.length - 1) {
+      console.error(`Gemini Vision error pada key ${keyIndex + 1}/${GEMINI_API_KEYS.length}:`, status || "-", detail);
+      if (status === 429 && attempt < GEMINI_API_KEYS.length - 1) {
         continue;
       }
       break;
@@ -3415,10 +3411,10 @@ async function startBot() {
     console.error("AUTH_METHOD=pairing membutuhkan BOT_NUMBER di .env");
     process.exit(1);
   }
-  if (!GROQ_API_KEYS.length) {
-    console.warn("GROQ_API_KEYS masih kosong!");
+  if (!GEMINI_API_KEYS.length) {
+    console.warn("GEMINI_API_KEYS masih kosong!");
   } else {
-    console.log(`Groq key aktif: 1 dari ${GROQ_API_KEYS.length} key tersedia.`);
+    console.log(`Gemini key aktif: 1 dari ${GEMINI_API_KEYS.length} key tersedia.`);
   }
   if (!GEOAPIFY_API_KEY) {
     console.warn("GEOAPIFY_API_KEY masih kosong; fitur !tempat akan memberi pesan konfigurasi.");
@@ -3431,7 +3427,7 @@ async function startBot() {
     console.log("VirusTotal siap untuk pemeriksaan link.");
   }
   console.log(`Jina Reader siap${JINA_API_KEY ? " dengan API key" : " tanpa API key (batas rendah)"} untuk membaca isi link.`);
-  console.log(`Groq Vision siap untuk fitur !gambar dengan model: ${GROQ_VISION_MODEL}`);
+  console.log(`Gemini Vision siap untuk fitur !gambar dengan model: ${GEMINI_VISION_MODEL}`);
   await refreshBotSettings(true);
   if (!BOT_SETTINGS.private_allowed_lid) {
     console.warn("PRIVATE_ALLOWED_LID masih kosong; semua chat privat akan diabaikan.");

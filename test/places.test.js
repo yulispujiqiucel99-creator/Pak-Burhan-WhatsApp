@@ -363,7 +363,7 @@ test("membuat teks !sisa dan !status tanpa mengekspos API key", () => {
 
   const statusText = buildAdminStatusReply("belum-pernah-mengirim-pertanyaan", 1_700_000_000_000);
   assert.match(statusText, /Status Pak Burhan/);
-  assert.match(statusText, /Model Groq:/);
+  assert.match(statusText, /Model Gemini:/);
   assert.doesNotMatch(statusText, /gsk_|sk-/i);
 });
 

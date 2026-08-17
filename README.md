@@ -1,12 +1,12 @@
 # Pak Burhan WhatsApp Bot
 
-Bot WhatsApp persona **Pak Burhan** sebagai wali kelas 7D. Proyek ini menggunakan **Node.js, Baileys, Groq API**, serta Tavily dan Geoapify sebagai integrasi opsional. Model chat bawaan adalah **`llama-3.1-8b-instant`**.
+Bot WhatsApp persona **Pak Burhan** sebagai wali kelas 7D. Proyek ini menggunakan **Node.js, Baileys, Gemini API melalui Google AI Studio**, serta Tavily dan Geoapify sebagai integrasi opsional. Model chat bawaan adalah **`gemini-3.1-flash-lite`**.
 
 ## Fitur
 
 Bot mendukung login melalui **QR Code** atau **Pairing Code**, percakapan AI dengan gaya Pak Burhan, memori percakapan, moderasi kata kasar, perintah `!help`, `!menu`, `!cari`, `!ceklink`, `!tempat`, `!gambar`, dan `!jadwal`. Perintah `!tempat` memakai Geoapify untuk mencari lokasi publik lalu mengirimkan satu **pesan lokasi WhatsApp yang dapat diketuk** untuk membuka peta. Pada grup, bot hanya menjawab saat akun bot benar-benar di-mention dengan format **`@bot pertanyaan`**; pada chat pribadi, bot hanya membalas LID yang diizinkan. Konfigurasi proyek dirancang untuk deployment Railway dengan volume persisten. Pesan masuk baru otomatis ditandai sebagai sudah dibaca oleh akun bot agar tidak menumpuk sebagai notifikasi belum dibaca; fitur ini tidak membisukan suara notifikasi WhatsApp.
 
-Untuk menghemat limit AI, **grup** memakai jeda pemrosesan 20 detik. Pesan berguna yang masuk saat ada permintaan grup lain diproses akan dibalas `Permintaan sedang diproses (nomor antrean X).`, lalu tetap dijawab sesuai urutan. Basa-basi sederhana seperti sapaan, pesan tes, ucapan terima kasih, dan tawa singkat tidak masuk antrean atau diteruskan ke Groq; bot langsung mengirim respons hemat-limit dengan panggilan Mas atau Mbak sesuai profil. **DM admin tidak memakai cooldown maupun antrean.**
+Untuk menghemat limit AI, **grup** memakai jeda pemrosesan 20 detik. Pesan berguna yang masuk saat ada permintaan grup lain diproses akan dibalas `Permintaan sedang diproses (nomor antrean X).`, lalu tetap dijawab sesuai urutan. Basa-basi sederhana seperti sapaan, pesan tes, ucapan terima kasih, dan tawa singkat tidak masuk antrean atau diteruskan ke Gemini; bot langsung mengirim respons hemat-limit dengan panggilan Mas atau Mbak sesuai profil. **DM admin tidak memakai cooldown maupun antrean.**
 
 Setiap LID memiliki paling banyak **20 pertanyaan dalam jendela 24 jam**. Yang dihitung adalah permintaan yang benar-benar akan diproses, termasuk pencarian tempat dan pencarian internet; onboarding, `!help`, `!sisa`, `!status`, respons waktu, moderasi, serta basa-basi tidak menghabiskan kuota. Saat kuota penuh, bot mengirimkan pesan tunggu 24 jam. Kuota tersimpan di volume Railway sehingga tidak hilang saat bot restart.
 
@@ -20,7 +20,7 @@ cp .env.example .env
 npm start
 ```
 
-Isi `GROQ_API_KEYS` pada `.env` sebelum menjalankan bot. API key dibuat dari [Groq Console](https://console.groq.com/keys); jangan pernah menyimpan key asli ke repository.
+Isi `GEMINI_API_KEYS` pada `.env` sebelum menjalankan bot. API key dibuat dari [Gemini Console](https://aistudio.google.com/apikey); jangan pernah menyimpan key asli ke repository.
 
 ### Test
 
@@ -32,10 +32,11 @@ Untuk iterasi sticker, jalankan `npm run test:sticker`. Untuk perubahan jadwal, 
 |---|---|
 | `AUTH_METHOD` | `qr` sebagai default, atau `pairing`. |
 | `BOT_NUMBER` | Wajib untuk metode `pairing`; gunakan format `628...`. |
-| `GROQ_API_KEYS` | Satu atau beberapa API key Groq, dipisahkan koma. Saat error 429, bot mencoba key berikutnya secara otomatis. |
-| `GROQ_API_KEY` | Kompatibilitas untuk konfigurasi lama dengan satu key; lebih disarankan memakai `GROQ_API_KEYS`. |
-| `GROQ_MODEL` | Model fallback yang dibaca dari kode; saat ini bot tetap memakai `llama-3.1-8b-instant` dari konfigurasi aktif. |
-| `GROQ_BASE_URL` | Default `https://api.groq.com/openai/v1`; biasanya tidak perlu diubah. |
+| `GEMINI_API_KEYS` | Satu atau beberapa API key Gemini, dipisahkan koma. Saat error 429, bot mencoba key berikutnya secara otomatis. |
+| `GEMINI_API_KEY` | Kompatibilitas untuk konfigurasi lama dengan satu key; lebih disarankan memakai `GEMINI_API_KEYS`. |
+| `GEMINI_MODEL` | Model chat utama; default `gemini-3.1-flash-lite`. |
+| `GEMINI_VISION_MODEL` | Model untuk `!gambar`; default mengikuti `GEMINI_MODEL`. |
+| `GEMINI_BASE_URL` | Default `https://generativelanguage.googleapis.com/v1beta/openai`; biasanya tidak perlu diubah. |
 | `SUPABASE_URL` | URL proyek Supabase yang menyimpan profil pengguna. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service-role key Supabase untuk bot di Railway; rahasia dan tidak boleh dibagikan. |
 | `PRIVATE_ALLOWED_LID` | LID privat yang diizinkan; dikelola dari Railway Variables dan kode. |
@@ -49,7 +50,7 @@ Untuk iterasi sticker, jalankan `npm run test:sticker`. Untuk perubahan jadwal, 
 
 ## Penyimpanan Profil di Supabase
 
-Supabase sekarang dipakai untuk menyimpan data kecil profil pengguna pada tabel `profiles`: LID, nama, gender, dan waktu pembaruan. Pengaturan perilaku bot, model Groq, zona waktu, LID privat, daftar command, jadwal, dan aturan mention tetap berada di kode atau Railway Variables. Jalankan migrasi dan ikuti panduan di [`supabase/README.md`](./supabase/README.md).
+Supabase sekarang dipakai untuk menyimpan data kecil profil pengguna pada tabel `profiles`: LID, nama, gender, dan waktu pembaruan. Pengaturan perilaku bot, model Gemini, zona waktu, LID privat, daftar command, jadwal, dan aturan mention tetap berada di kode atau Railway Variables. Jalankan migrasi dan ikuti panduan di [`supabase/README.md`](./supabase/README.md).
 
 ## Deployment Railway
 
@@ -61,7 +62,7 @@ Setelah deployment, buka menu **Logs** Railway. Jika `AUTH_METHOD=qr`, log akan 
 
 ## Memeriksa dan Membaca Link
 
-Fitur link memakai dua layanan dengan tugas berbeda. **VirusTotal Public API** memeriksa apakah URL sudah terdeteksi sebagai malware atau phishing. Jika pemeriksaan tidak menunjukkan bahaya, **Jina Reader** mengambil isi halaman menjadi teks yang kemudian dirangkum oleh model Groq Llama yang sudah dipakai bot. VirusTotal harus dikonfigurasi agar bot tidak membaca link tanpa pemeriksaan keamanan; Jina Reader dapat berjalan dengan batas rendah tanpa API key, tetapi `JINA_API_KEY` disarankan untuk penggunaan yang lebih stabil.
+Fitur link memakai dua layanan dengan tugas berbeda. **VirusTotal Public API** memeriksa apakah URL sudah terdeteksi sebagai malware atau phishing. Jika pemeriksaan tidak menunjukkan bahaya, **Jina Reader** mengambil isi halaman menjadi teks yang kemudian dirangkum oleh model Gemini yang dipakai bot. VirusTotal harus dikonfigurasi agar bot tidak membaca link tanpa pemeriksaan keamanan; Jina Reader dapat berjalan dengan batas rendah tanpa API key, tetapi `JINA_API_KEY` disarankan untuk penggunaan yang lebih stabil.
 
 Tambahkan variabel berikut di **Railway → Variables**:
 
@@ -78,9 +79,9 @@ Gunakan command manual:
 !cari https://contoh.com/artikel
 ```
 
-Pesan biasa yang mengandung URL pada grup jadwal aktif akan diproses otomatis tanpa tag bot. Pemeriksaan otomatis hanya memanggil VirusTotal dan tidak memanggil Jina Reader maupun Groq. Bot memberi reaksi `🧐` saat memeriksa; jika hasilnya `clean`, reaksinya diganti menjadi `✅` tanpa pesan teks. Jika VirusTotal masih `pending` atau mengalami error, bot tidak memberi `❌`, tidak menghapus pesan, dan tidak mengirim pesan teks karena status tersebut belum membuktikan bahaya. Jika link terdeteksi mencurigakan atau berbahaya secara final, bot memberi reaksi `❌`, membalas pesan, menghapus pesan sumber bila memiliki izin admin, lalu mengirim penjelasan risiko. Bot memeriksa maksimal tiga URL dalam satu pesan.
+Pesan biasa yang mengandung URL pada grup jadwal aktif akan diproses otomatis tanpa tag bot. Pemeriksaan otomatis hanya memanggil VirusTotal dan tidak memanggil Jina Reader maupun Gemini. Bot memberi reaksi `🧐` saat memeriksa; jika hasilnya `clean`, reaksinya diganti menjadi `✅` tanpa pesan teks. Jika VirusTotal masih `pending` atau mengalami error, bot tidak memberi `❌`, tidak menghapus pesan, dan tidak mengirim pesan teks karena status tersebut belum membuktikan bahaya. Jika link terdeteksi mencurigakan atau berbahaya secara final, bot memberi reaksi `❌`, membalas pesan, menghapus pesan sumber bila memiliki izin admin, lalu mengirim penjelasan risiko. Bot memeriksa maksimal tiga URL dalam satu pesan.
 
-Hasil pemeriksaan otomatis disimpan sebagai cache sementara selama 24 jam agar URL yang sama tidak memakan request VirusTotal berulang. Cache otomatis dibersihkan setiap pukul **00.30 WIB** dan tidak menyentuh `memory.json`, `auth_info`, kuota, status jadwal, maupun profil. Link dengan command manual tetap memakai alur VirusTotal → Jina Reader → Groq, dengan maksimal **5.000 karakter total** dari teks halaman ke Groq. Konteks riwayat untuk analisis link dan panjang jawaban juga dibatasi agar tidak melewati batas token model. **Hasil “belum terdeteksi” bukan jaminan mutlak bahwa sebuah URL aman.** Jangan kirim URL yang mengandung token login, reset password, undangan privat, atau data pribadi karena URL tersebut dikirim ke layanan pihak ketiga.
+Hasil pemeriksaan otomatis disimpan sebagai cache sementara selama 24 jam agar URL yang sama tidak memakan request VirusTotal berulang. Cache otomatis dibersihkan setiap pukul **00.30 WIB** dan tidak menyentuh `memory.json`, `auth_info`, kuota, status jadwal, maupun profil. Link dengan command manual tetap memakai alur VirusTotal → Jina Reader → Gemini, dengan maksimal **5.000 karakter total** dari teks halaman ke Gemini. Konteks riwayat untuk analisis link dan panjang jawaban juga dibatasi agar tidak melewati batas token model. **Hasil “belum terdeteksi” bukan jaminan mutlak bahwa sebuah URL aman.** Jangan kirim URL yang mengandung token login, reset password, undangan privat, atau data pribadi karena URL tersebut dikirim ke layanan pihak ketiga.
 
 VirusTotal Public API mempunyai batas penggunaan dan aturan penggunaan produk. Untuk detailnya, lihat [dokumentasi VirusTotal Public API](https://docs.virustotal.com/reference/public-vs-premium-api). Jina Reader dapat dibaca melalui [dokumentasi resmi Jina Reader](https://jina.ai/reader/). API key tidak pernah dicetak ke chat, log, atau repository.
 
@@ -112,7 +113,7 @@ Bot akan mengirim rangkuman hasil serta satu pesan lokasi interaktif. Ketuk pesa
 
 Gunakan `!gambar` untuk menganalisis satu foto seperti soal, halaman buku, tabel, atau diagram. Di grup, foto wajib dikirim dengan tag bot dan caption yang jelas, misalnya **`@bot !gambar tolong jelaskan soal ini`**. Di DM admin, cukup gunakan `!gambar tolong jelaskan gambar ini` pada caption foto.
 
-Bot hanya memproses foto JPG, PNG, atau WebP dengan ukuran maksimum **20 MB**. Setiap analisis gambar memakai satu kuota pertanyaan LID. Foto diunduh sementara ke memori untuk dikirim ke Groq Vision lalu tidak disimpan permanen oleh bot. Jika tulisan pada foto buram, hasil analisis dapat keliru; periksa kembali jawaban penting.
+Bot hanya memproses foto JPG, PNG, atau WebP dengan ukuran maksimum **20 MB**. Setiap analisis gambar memakai satu kuota pertanyaan LID. Foto diunduh sementara ke memori untuk dikirim ke Gemini Vision lalu tidak disimpan permanen oleh bot. Jika tulisan pada foto buram, hasil analisis dapat keliru; periksa kembali jawaban penting.
 
 ## Membuat Sticker
 
@@ -142,15 +143,15 @@ File audio tidak memuat API key dan dapat diganti dengan file baru menggunakan n
 
 Gunakan `!sisa` setelah profil lengkap untuk melihat kuota terpakai, sisa pertanyaan, dan waktu reset kuota LID Anda. Perintah ini tidak mengurangi kuota dan dapat digunakan di DM maupun grup selama bot sedang aktif.
 
-Perintah `!status` **hanya** dapat digunakan dari DM oleh LID admin yang diizinkan. Laporan ini tidak memuat API key; isinya hanya status koneksi WhatsApp, kesiapan Groq, VirusTotal, Jina Reader, dan Geoapify, model Groq aktif, kuota admin, status jam istirahat grup, serta zona waktu bot.
+Perintah `!status` **hanya** dapat digunakan dari DM oleh LID admin yang diizinkan. Laporan ini tidak memuat API key; isinya hanya status koneksi WhatsApp, kesiapan Gemini, VirusTotal, Jina Reader, dan Geoapify, model Gemini aktif, kuota admin, status jam istirahat grup, serta zona waktu bot.
 
 ## Login Ulang
 
 Untuk menghubungkan nomor WhatsApp yang berbeda, hapus folder `auth_info` pada volume Railway atau lakukan *wipe* volume, lalu deploy atau restart ulang bot.
 
-## Penanganan Error Groq
+## Penanganan Error Gemini
 
-Bot memakai **Groq Chat Completions API**, menyimpan maksimal **4 putaran** percakapan sebagai konteks agar penggunaan token lebih terkendali, dan menyertakan tanggal serta jam terkini sesuai `BOT_TIMEZONE` pada setiap permintaan AI. Riwayat privat dan riwayat grup dipisahkan menurut sumber chat sehingga konteks chat privat tidak dipakai pada grup. Jika Groq membalas **429**, bot mencoba key berikutnya dari `GROQ_API_KEYS` tanpa menuliskan rahasia ke log. Pesan yang jelas tetap ditampilkan untuk kode **404**, **429**, dan **401/403**. Detail kesalahan API dicatat pada log Railway agar konfigurasi dapat diperiksa tanpa membocorkan API key ke chat.
+Bot memakai **Gemini Chat Completions API**, menyimpan maksimal **4 putaran** percakapan sebagai konteks agar penggunaan token lebih terkendali, dan menyertakan tanggal serta jam terkini sesuai `BOT_TIMEZONE` pada setiap permintaan AI. Riwayat privat dan riwayat grup dipisahkan menurut sumber chat sehingga konteks chat privat tidak dipakai pada grup. Jika Gemini membalas **429**, bot mencoba key berikutnya dari `GEMINI_API_KEYS` tanpa menuliskan rahasia ke log. Pesan yang jelas tetap ditampilkan untuk kode **404**, **429**, dan **401/403**. Detail kesalahan API dicatat pada log Railway agar konfigurasi dapat diperiksa tanpa membocorkan API key ke chat.
 
 
 > Catatan konsep audio Tahun Baru versi Vinn: nuansa haru sekaligus bahagia. Isi utama tentang Pak Burhan yang sudah menemani murid hampir satu tahun, waktu kebersamaan yang mulai menipis, dan sebentar lagi mereka naik kelas. Audio referensi Vinn: `/home/ubuntu/upload/AhaTik_suaraasli-vinn_a3e25476-caf4-465a-90bd-9badfed7e848.mp3`. Catatan ini belum menjadi fitur atau jadwal aktif; masih tersisa empat hari khusus untuk dirancang.

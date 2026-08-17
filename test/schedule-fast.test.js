@@ -102,4 +102,4 @@ test("test cepat: pesan H-1 menyebut hari raya dan jadwal libur", () => {
   assert.match(message, /tidak ada jadwal pelajaran/);
 });
 
-console.log("Test cepat jadwal selesai: tanpa WhatsApp, Supabase, Groq, VirusTotal, atau Jina.");
+console.log("Test cepat jadwal selesai: tanpa WhatsApp, Supabase, Gemini, VirusTotal, atau Jina.");

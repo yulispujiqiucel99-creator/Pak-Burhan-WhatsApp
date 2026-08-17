@@ -1,6 +1,6 @@
 # Profil Pengguna di Supabase
 
-Bot Pak Burhan menggunakan Supabase hanya untuk menyimpan data kecil profil pengguna. Pengaturan perilaku bot, daftar perintah, model Groq, zona waktu, dan aturan mention sekarang berada di kode GitHub agar perubahan dapat ditinjau melalui commit.
+Bot Pak Burhan menggunakan Supabase hanya untuk menyimpan data kecil profil pengguna. Pengaturan perilaku bot, daftar perintah, model Gemini, zona waktu, dan aturan mention sekarang berada di kode GitHub agar perubahan dapat ditinjau melalui commit.
 
 ## Persiapan sekali saja
 
@@ -42,10 +42,10 @@ Workflow hanya berjalan ketika file di `supabase/migrations/**` berubah atau ket
 Nilai berikut tetap dikelola melalui kode dan environment Railway, bukan tabel Supabase:
 
 - daftar perintah dan isi `!help`;
-- model Groq dan API key;
+- model Gemini dan API key;
 - zona waktu WIB;
 - LID privat yang diizinkan;
 - kata mention massal;
 - jadwal kelas, piket, MBG, audio, kuota, dan state jadwal.
 
-Jangan menyimpan `GROQ_API_KEYS`, `GROQ_API_KEY`, `GEOAPIFY_API_KEY`, atau key rahasia lain di Supabase.
+Jangan menyimpan `GEMINI_API_KEYS`, `GEMINI_API_KEY`, `GEOAPIFY_API_KEY`, atau key rahasia lain di Supabase.
