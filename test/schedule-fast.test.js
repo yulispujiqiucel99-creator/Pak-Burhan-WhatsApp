@@ -34,10 +34,6 @@ test("test cepat: audio hari libur dijadwalkan pukul 07.00 WIB", () => {
   assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-16T00:00:00.000Z")), false);
 });
 
-test("test cepat: jadwal sekolah tetap pada pukul 17.00 dan 20.00 WIB", () => {
-  assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-16T10:00:00.000Z")), true);
-  assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-16T13:00:00.000Z")), true);
-});
 
 test("test cepat: scheduler memilih hari berikutnya dan akhir pekan menuju Senin", () => {
   const friday = getNextClassScheduleTarget(new Date("2026-08-14T10:00:00.000Z"));

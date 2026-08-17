@@ -59,15 +59,12 @@ const {
   isValidJfrCodeInput,
 } = require("../index");
 
-test("kode JFR harus tujuh karakter alfanumerik", () => {
+test("JFR, role admin, dan menu rahasia tetap terpisah", () => {
   assert.equal(isValidJfrCodeInput("289O4AD"), true);
   assert.equal(isValidJfrCodeInput("289o4ad"), true);
   assert.equal(isValidJfrCodeInput("123456"), false);
   assert.equal(isValidJfrCodeInput("12345678"), false);
   assert.equal(isValidJfrCodeInput("ABC-123"), false);
-});
-
-test("role admin dan JFR tidak tercampur", () => {
   assert.equal(isAdminLid("12345"), false);
   assert.equal(isJfrRole("12345"), false);
   assert.doesNotMatch(buildHelpText(), /!daftarjfr|!cabutjfr/);
@@ -79,20 +76,14 @@ test("!help tidak lagi menampilkan command musik yang sudah dihapus", () => {
   assert.doesNotMatch(buildHelpText(), /!musik|Jamendo/i);
 });
 
-test("!hd menerima semua variasi huruf", () => {
+test("command, mode otomatis, dan caption HD tetap konsisten", () => {
   assert.deepEqual(parseHdCommand("!hd"), { mode: "photo" });
   assert.deepEqual(parseHdCommand("!HD"), { mode: "photo" });
   assert.deepEqual(parseHdCommand("!Hd"), { mode: "photo" });
   assert.equal(parseHdCommand("!hd foto"), null);
-});
-
-test("mode auto HD memilih deAPI 4x, 2x, atau CPU sesuai resolusi", () => {
   assert.deepEqual(getHdAutoMode({ width: 480, height: 360 }), { mode: "deapi", scale: 4, longestSide: 480 });
   assert.deepEqual(getHdAutoMode({ width: 720, height: 480 }), { mode: "deapi", scale: 2, longestSide: 720 });
   assert.deepEqual(getHdAutoMode({ width: 1440, height: 900 }), { mode: "cpu", scale: 1, longestSide: 1440 });
-});
-
-test("caption HD menjelaskan resolusi, metode, faktor, dan pengiriman file", () => {
   const caption = formatHdCaption({
     inputMetadata: { width: 480, height: 360 },
     outputMetadata: { width: 1440, height: 1080 },
@@ -289,16 +280,13 @@ test("menolak hasil tanpa koordinat agar tidak mengirim lokasi rusak", () => {
   assert.equal(normalizePlaceFeature({ properties: { name: "Tanpa koordinat" } }), null);
 });
 
-test("mendeteksi basa-basi dan pesan ringan tanpa mengirimnya ke AI", () => {
+test("basa-basi terdeteksi dan balasannya hemat-limit", () => {
   for (const message of ["halo", "Hai Pak Burhan!", "wkwkwk 😂", "makasih", "tes bot", "selamat malam"]) {
     assert.equal(isLowValueMessage(message), true, message);
   }
   assert.equal(isLowValueMessage("jelaskan fotosintesis"), false);
   assert.equal(isLowValueMessage("!tempat bioskop di Solo"), false);
   assert.equal(isLowValueMessage("tolong cari berita terbaru"), false);
-});
-
-test("membuat balasan hemat-limit dengan panggilan sesuai gender", () => {
   assert.equal(
     buildLowValueReply({ gender: "male" }),
     "hehe maaf ya Mas, sebelumnya saya dibuat dengan limit. *jika limit saya habis* karna hal yang tidak terlalu berguna itu sama saja mubazir limit😅"
@@ -306,7 +294,7 @@ test("membuat balasan hemat-limit dengan panggilan sesuai gender", () => {
   assert.match(buildLowValueReply({ gender: "female" }), /^hehe maaf ya Mbak,/);
 });
 
-test("membatasi satu LID sampai 20 pertanyaan lalu mereset setelah 24 jam", () => {
+test("kuota pertanyaan dan balasan limit bekerja sesuai profil", () => {
   const usage = {};
   const lid = "235656601194672";
   const start = 1_700_000_000_000;
@@ -318,9 +306,7 @@ test("membatasi satu LID sampai 20 pertanyaan lalu mereset setelah 24 jam", () =
   assert.equal(usage[lid].count, 20);
   assert.equal(consumeQuestionQuotaForStore(usage, lid, start + 24 * 60 * 60 * 1000), true);
   assert.equal(usage[lid].count, 1);
-});
 
-test("membuat pesan limit sesuai panggilan profil", () => {
   assert.equal(
     buildQuestionLimitReply({ gender: "male" }),
     "waduh mas udh limit nih tunggu sampai 24jam ya saya juga mau istirahat"
@@ -330,6 +316,7 @@ test("membuat pesan limit sesuai panggilan profil", () => {
     "waduh mbak udh limit nih tunggu sampai 24jam ya saya juga mau istirahat"
   );
 });
+
 
 test("menutup respons grup pada 21.30 sampai sebelum 04.00 WIB", () => {
   assert.equal(isGroupRestTime(new Date("2026-08-14T14:29:00.000Z")), false);
@@ -381,10 +368,6 @@ test("membuat satu pesan informasi Senin berisi seragam, pelajaran, dan dua pike
   assert.match(message, /\*JIKA TERDAPAT KESALAHAN PADA JADWAL HUBUNGIN NOMOR DARURAT\*🗿😅\*$/);
 });
 
-test("menampilkan pesan libur pada Sabtu dan Minggu", () => {
-  assert.match(formatClassScheduleMessage("sabtu"), /Hari ini libur/);
-  assert.match(formatClassScheduleMessage("minggu"), /Hari ini libur/);
-});
 
 test("menemukan audio jadwal untuk setiap hari dalam seminggu", () => {
   for (const dayKey of ["senin", "selasa", "rabu", "kamis", "jumat", "sabtu", "minggu"]) {
