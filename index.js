@@ -498,13 +498,13 @@ function loadQuestionUsage() {
 function loadBotState() {
   try {
     if (fs.existsSync(BOT_STATE_FILE)) {
-      const parsed = JSON.parse(fs.readFileSync(BOT_STATE_FILE, "utf8"));
+          const parsed = JSON.parse(fs.readFileSync(BOT_STATE_FILE, "utf8"));
       BOT_STATE = parsed && typeof parsed === "object"
-        ? { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "", scheduleActivationFailureMessageId: "", lastWeekendAudioDeliveryKey: "", holidayCalendar: {}, lastHolidayNotificationKeys: {}, lastHolidayDiscoveryAt: "", jfrRoles: {}, jfrPending: {}, jfrOnboardingCandidates: {}, ...parsed }
-        : { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "", scheduleActivationFailureMessageId: "", lastWeekendAudioDeliveryKey: "", holidayCalendar: {}, lastHolidayNotificationKeys: {}, lastHolidayDiscoveryAt: "", jfrRoles: {}, jfrPending: {}, jfrOnboardingCandidates: {} };
+        ? { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "", pinnedClassScheduleMessageKey: null, scheduleActivationFailureMessageId: "", lastWeekendAudioDeliveryKey: "", holidayCalendar: {}, lastHolidayNotificationKeys: {}, lastHolidayDiscoveryAt: "", jfrRoles: {}, jfrPending: {}, jfrOnboardingCandidates: {}, ...parsed }
+        : { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "", pinnedClassScheduleMessageKey: null, scheduleActivationFailureMessageId: "", lastWeekendAudioDeliveryKey: "", holidayCalendar: {}, lastHolidayNotificationKeys: {}, lastHolidayDiscoveryAt: "", jfrRoles: {}, jfrPending: {}, jfrOnboardingCandidates: {} };
     }
   } catch {
-    BOT_STATE = { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "", scheduleActivationFailureMessageId: "", lastWeekendAudioDeliveryKey: "", holidayCalendar: {}, lastHolidayNotificationKeys: {}, lastHolidayDiscoveryAt: "", jfrRoles: {}, jfrPending: {}, jfrOnboardingCandidates: {} };
+    BOT_STATE = { lastGroupRestDate: "", classScheduleGroupJid: "", lastClassScheduleDeliveryKey: "", pinnedClassScheduleMessageKey: null, scheduleActivationFailureMessageId: "", lastWeekendAudioDeliveryKey: "", holidayCalendar: {}, lastHolidayNotificationKeys: {}, lastHolidayDiscoveryAt: "", jfrRoles: {}, jfrPending: {}, jfrOnboardingCandidates: {} };
   }
 }
 
@@ -2281,6 +2281,17 @@ function getNextClassScheduleTarget(date = new Date()) {
   };
 }
 
+function isSchoolDayKey(dayKey) {
+  return ["senin", "selasa", "rabu", "kamis", "jumat"].includes(String(dayKey || "").toLowerCase());
+}
+
+function shouldPinClassSchedule({ currentDayKey, deliveryMinute, targetDayKey, holiday = false }) {
+  return deliveryMinute === 17 * 60
+    && isSchoolDayKey(currentDayKey)
+    && isSchoolDayKey(targetDayKey)
+    && !holiday;
+}
+
 function formatClassScheduleDate(date = new Date()) {
   try {
     const parts = new Intl.DateTimeFormat("id-ID", {
@@ -2337,8 +2348,9 @@ function formatClassScheduleMessage(dayKey, date = new Date()) {
 async function sendClassScheduleContent(sock, jid, dayKey, date = new Date(), { includeAudio = false, quoted = null } = {}) {
   const sendOptions = quoted ? { quoted } : undefined;
   const audioPath = includeAudio ? getClassScheduleAudioPath(dayKey) : null;
+  let audioMessage = null;
   if (audioPath) {
-    await sock.sendMessage(
+    audioMessage = await sock.sendMessage(
       jid,
       {
         audio: fs.readFileSync(audioPath),
@@ -2348,7 +2360,53 @@ async function sendClassScheduleContent(sock, jid, dayKey, date = new Date(), { 
       sendOptions
     );
   }
-  await sock.sendMessage(jid, { text: formatClassScheduleMessage(dayKey, date) }, sendOptions);
+  const textMessage = await sock.sendMessage(jid, { text: formatClassScheduleMessage(dayKey, date) }, sendOptions);
+  return { audioMessage, textMessage };
+}
+
+function getStoredMessageKey(messageKey, fallbackJid = "") {
+  if (!messageKey?.id) return null;
+  return {
+    remoteJid: messageKey.remoteJid || fallbackJid,
+    fromMe: messageKey.fromMe !== false,
+    id: messageKey.id,
+    ...(messageKey.participant ? { participant: messageKey.participant } : {}),
+  };
+}
+
+async function removePinnedClassSchedule(sock, groupJid) {
+  const oldKey = getStoredMessageKey(BOT_STATE.pinnedClassScheduleMessageKey, groupJid);
+  if (!oldKey) {
+    BOT_STATE.pinnedClassScheduleMessageKey = null;
+    return true;
+  }
+  try {
+    await sock.sendMessage(groupJid, { delete: oldKey });
+    BOT_STATE.pinnedClassScheduleMessageKey = null;
+    saveBotState();
+    return true;
+  } catch (error) {
+    console.warn("Pesan pin jadwal lama belum bisa dihapus:", error.message);
+    return false;
+  }
+}
+
+async function pinClassScheduleMessage(sock, groupJid, message) {
+  const messageKey = getStoredMessageKey(message?.key, groupJid);
+  if (!messageKey) return false;
+  try {
+    await sock.sendMessage(groupJid, {
+      pin: messageKey,
+      type: 1,
+      time: 604800,
+    });
+    BOT_STATE.pinnedClassScheduleMessageKey = messageKey;
+    saveBotState();
+    return true;
+  } catch (error) {
+    console.warn("Pesan jadwal belum bisa dipin:", error.message);
+    return false;
+  }
 }
 
 function parseClassScheduleDay(text, date = new Date()) {
@@ -2443,6 +2501,7 @@ async function activateDefaultScheduleGroup(sock) {
     const { groupJid, subject } = await resolveScheduleGroupFromInvite(sock, DEFAULT_CLASS_SCHEDULE_INVITE_CODE);
     BOT_STATE.classScheduleGroupJid = groupJid;
     BOT_STATE.lastClassScheduleDeliveryKey = "";
+    BOT_STATE.pinnedClassScheduleMessageKey = null;
     BOT_STATE.scheduleActivationFailureMessageId = "";
     saveBotState();
     return { ok: true, groupJid, subject };
@@ -2479,6 +2538,7 @@ async function retryScheduleActivationFromReply(sock, msg, jid, text) {
     const { groupJid, subject } = await resolveScheduleGroupFromInvite(sock, inviteCode);
     BOT_STATE.classScheduleGroupJid = groupJid;
     BOT_STATE.lastClassScheduleDeliveryKey = "";
+    BOT_STATE.pinnedClassScheduleMessageKey = null;
     BOT_STATE.scheduleActivationFailureMessageId = "";
     saveBotState();
     await sock.sendMessage(jid, { text: `[${subject}] sudah dijadikan jadwal otomatis. Jadwal akan dikirim pukul 17.00 dan 20.00 WIB.` }, { quoted: msg });
@@ -2635,14 +2695,39 @@ async function sendClassSchedule(sock, date = new Date()) {
   const deliveryKey = `${dateKey}-${hour}-${minute}`;
   if (BOT_STATE.lastClassScheduleDeliveryKey === deliveryKey) return false;
 
+  const currentDayKey = getClassScheduleDayKey(date);
   const target = getNextClassScheduleTarget(date);
   const groupJid = BOT_STATE.classScheduleGroupJid;
   const holiday = getHolidayForDate(target.date);
-  if (holiday) await sendHolidayScheduleContent(sock, groupJid, holiday);
-  else await sendClassScheduleContent(sock, groupJid, target.dayKey, target.date, { includeAudio: true });
+  const managePin = minute === 17 * 60 && isSchoolDayKey(currentDayKey);
+  if (managePin) {
+    const removed = await removePinnedClassSchedule(sock, groupJid);
+    if (!removed) {
+      console.warn("Jadwal tetap dikirim tanpa pin baru agar pin lama tidak bertumpuk.");
+    }
+  }
+
+  let result;
+  if (holiday) {
+    await sendHolidayScheduleContent(sock, groupJid, holiday);
+    result = { textMessage: null };
+  } else {
+    result = await sendClassScheduleContent(sock, groupJid, target.dayKey, target.date, { includeAudio: true });
+  }
+
+  const shouldPin = shouldPinClassSchedule({
+    currentDayKey,
+    deliveryMinute: minute * 60,
+    targetDayKey: target.dayKey,
+    holiday: Boolean(holiday),
+  });
+  if (shouldPin && result.textMessage?.key && !BOT_STATE.pinnedClassScheduleMessageKey) {
+    await pinClassScheduleMessage(sock, groupJid, result.textMessage);
+  }
+
   BOT_STATE.lastClassScheduleDeliveryKey = deliveryKey;
   saveBotState();
-  console.log(`Jadwal kelas terkirim ke grup aktif pada ${deliveryKey}.`);
+  console.log(`Jadwal kelas terkirim ke grup aktif pada ${deliveryKey}${shouldPin ? " dan dipin" : " sebagai pengingat"}.`);
   return true;
 }
 
@@ -3072,6 +3157,7 @@ async function handleMessage(sock, msg) {
       }
       BOT_STATE.classScheduleGroupJid = "";
       BOT_STATE.lastClassScheduleDeliveryKey = "";
+      BOT_STATE.pinnedClassScheduleMessageKey = null;
       saveBotState();
       await sock.sendMessage(jid, { text: "Pengiriman jadwal otomatis sudah dinonaktifkan." }, { quoted: msg });
       return;
@@ -3581,6 +3667,8 @@ module.exports = {
   parseScheduleActivationCommand,
   parseNaturalScheduleRequest,
   formatClassScheduleMessage,
+  isSchoolDayKey,
+  shouldPinClassSchedule,
   sendClassScheduleContent,
   getClassScheduleAudioPath,
   getNextClassScheduleTarget,

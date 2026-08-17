@@ -4,6 +4,8 @@ const fs = require("node:fs");
 const {
   parseClassScheduleDay,
   formatClassScheduleMessage,
+  isSchoolDayKey,
+  shouldPinClassSchedule,
   getClassScheduleAudioPath,
   getNextClassScheduleTarget,
   sendClassScheduleContent,
@@ -16,6 +18,16 @@ const {
 } = require("../index");
 
 const WEEKEND_DAYS = ["sabtu", "minggu"];
+
+test("pin hanya aktif pada pengiriman pukul 17.00 untuk jadwal sekolah", () => {
+  assert.equal(isSchoolDayKey("senin"), true);
+  assert.equal(isSchoolDayKey("sabtu"), false);
+  assert.equal(shouldPinClassSchedule({ currentDayKey: "senin", deliveryMinute: 17 * 60, targetDayKey: "selasa" }), true);
+  assert.equal(shouldPinClassSchedule({ currentDayKey: "senin", deliveryMinute: 20 * 60, targetDayKey: "selasa" }), false);
+  assert.equal(shouldPinClassSchedule({ currentDayKey: "sabtu", deliveryMinute: 17 * 60, targetDayKey: "senin" }), false);
+  assert.equal(shouldPinClassSchedule({ currentDayKey: "jumat", deliveryMinute: 17 * 60, targetDayKey: "sabtu" }), false);
+  assert.equal(shouldPinClassSchedule({ currentDayKey: "minggu", deliveryMinute: 17 * 60, targetDayKey: "senin", holiday: true }), false);
+});
 
 test("test cepat: audio hari libur dijadwalkan pukul 07.00 WIB", () => {
   assert.equal(WEEKEND_AUDIO_DELIVERY_MINUTES, 7 * 60);
