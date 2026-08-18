@@ -6,6 +6,7 @@ const {
   formatClassScheduleMessage,
   isSchoolDayKey,
   shouldPinClassSchedule,
+  PIN_FOR_ALL,
   getClassScheduleAudioPath,
   getNextClassScheduleTarget,
   sendClassScheduleContent,
@@ -20,6 +21,7 @@ const {
 const WEEKEND_DAYS = ["sabtu", "minggu"];
 
 test("pin hanya aktif pada pengiriman pukul 16.00 untuk jadwal sekolah", () => {
+  assert.equal(PIN_FOR_ALL, 1);
   assert.equal(isSchoolDayKey("senin"), true);
   assert.equal(isSchoolDayKey("sabtu"), false);
   assert.equal(shouldPinClassSchedule({ currentDayKey: "senin", deliveryMinute: 16 * 60, targetDayKey: "selasa" }), true);

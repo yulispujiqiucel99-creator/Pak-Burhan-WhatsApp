@@ -13,6 +13,7 @@ const {
   makeCacheableSignalKeyStore,
   isJidGroup,
   downloadMediaMessage,
+  proto,
 } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const axios = require("axios");
@@ -120,6 +121,7 @@ const GROUP_REST_START_MINUTES = 21 * 60 + 30;
 const GROUP_REST_END_MINUTES = 4 * 60;
 const GROUP_REST_MESSAGE = "akhirnya tugas saya selesai wah udh larut malam saya harus tidur secepatnya buat murid murid saya, hmm... ok alarm 04.00 udh saya jadwal buat persiapan💤😴";
 const CLASS_SCHEDULE_PRIMARY_DELIVERY_MINUTES = 16 * 60;
+const PIN_FOR_ALL = proto.PinInChat.Type.PIN_FOR_ALL;
 const CLASS_SCHEDULE_REMINDER_DELIVERY_MINUTES = 20 * 60;
 const CLASS_SCHEDULE_DELIVERY_MINUTES = new Set([CLASS_SCHEDULE_PRIMARY_DELIVERY_MINUTES, CLASS_SCHEDULE_REMINDER_DELIVERY_MINUTES]);
 const CLASS_UNIFORM_TEXT = "memakai seragam sekolah lama";
@@ -2474,14 +2476,16 @@ async function pinClassScheduleMessage(sock, groupJid, message) {
   try {
     await sock.sendMessage(groupJid, {
       pin: messageKey,
-      type: 1,
+      type: PIN_FOR_ALL,
       time: 604800,
     });
     BOT_STATE.pinnedClassScheduleMessageKey = messageKey;
     saveBotState();
+    console.log(`Pesan jadwal ${messageKey.id} berhasil dipin ke ${groupJid}.`);
     return true;
   } catch (error) {
-    console.warn("Pesan jadwal belum bisa dipin:", error.message);
+    const detail = error?.output?.statusCode ? `status ${error.output.statusCode}` : error?.data?.status ? `status ${error.data.status}` : error.message;
+    console.warn(`Pesan jadwal belum bisa dipin (${detail}). Pastikan bot admin grup dan pesan teks berasal dari bot.`);
     return false;
   }
 }
@@ -2780,7 +2784,9 @@ async function sendClassSchedule(sock, date = new Date()) {
   if (managePin) {
     const removed = await removePinnedClassSchedule(sock, groupJid);
     if (!removed) {
-      console.warn("Jadwal tetap dikirim tanpa pin baru agar pin lama tidak bertumpuk.");
+      console.warn("Pin lama belum berhasil dihapus; bot tetap mencoba mem-pin jadwal terbaru agar jadwal baru terlihat.");
+      BOT_STATE.pinnedClassScheduleMessageKey = null;
+      saveBotState();
     }
   }
 
@@ -2798,13 +2804,13 @@ async function sendClassSchedule(sock, date = new Date()) {
     targetDayKey: target.dayKey,
     holiday: Boolean(holiday),
   });
-  if (shouldPin && result.textMessage?.key && !BOT_STATE.pinnedClassScheduleMessageKey) {
-    await pinClassScheduleMessage(sock, groupJid, result.textMessage);
-  }
+  const pinSucceeded = shouldPin && result.textMessage?.key
+    ? await pinClassScheduleMessage(sock, groupJid, result.textMessage)
+    : false;
 
   BOT_STATE.lastClassScheduleDeliveryKey = deliveryKey;
   saveBotState();
-  console.log(`Jadwal kelas terkirim ke grup aktif pada ${deliveryKey}${shouldPin ? " dan dipin" : " sebagai pengingat"}.`);
+  console.log(`Jadwal kelas terkirim ke grup aktif pada ${deliveryKey}${pinSucceeded ? " dan berhasil dipin" : shouldPin ? " tetapi pin gagal" : " sebagai pengingat"}.`);
   return true;
 }
 
@@ -3751,6 +3757,7 @@ module.exports = {
   formatClassScheduleMessage,
   isSchoolDayKey,
   shouldPinClassSchedule,
+  PIN_FOR_ALL,
   sendClassScheduleContent,
   getClassScheduleAudioPath,
   getNextClassScheduleTarget,
