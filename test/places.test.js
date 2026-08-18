@@ -375,11 +375,11 @@ test("menemukan audio jadwal untuk setiap hari dalam seminggu", () => {
   }
 });
 
-test("membaca hari jadwal dan hanya mengirim pada pukul 17.00 atau 20.00 WIB", () => {
+test("membaca hari jadwal dan hanya mengirim pada pukul 16.00 atau 20.00 WIB", () => {
   assert.equal(parseClassScheduleDay("!jadwal kamis"), "kamis");
   assert.equal(parseClassScheduleDay("!jadwal ahad"), "minggu");
   assert.equal(getClassScheduleDayKey(new Date("2026-08-17T10:00:00.000Z")), "senin");
-  assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-17T10:00:00.000Z")), true);
+  assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-17T09:00:00.000Z")), true);
   assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-17T13:00:00.000Z")), true);
   assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-17T11:00:00.000Z")), false);
 });

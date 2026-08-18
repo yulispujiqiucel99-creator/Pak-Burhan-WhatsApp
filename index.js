@@ -119,7 +119,9 @@ const DAILY_QUESTION_WINDOW_MS = 24 * 60 * 60 * 1000;
 const GROUP_REST_START_MINUTES = 21 * 60 + 30;
 const GROUP_REST_END_MINUTES = 4 * 60;
 const GROUP_REST_MESSAGE = "akhirnya tugas saya selesai wah udh larut malam saya harus tidur secepatnya buat murid murid saya, hmm... ok alarm 04.00 udh saya jadwal buat persiapan💤😴";
-const CLASS_SCHEDULE_DELIVERY_MINUTES = new Set([17 * 60, 20 * 60]);
+const CLASS_SCHEDULE_PRIMARY_DELIVERY_MINUTES = 16 * 60;
+const CLASS_SCHEDULE_REMINDER_DELIVERY_MINUTES = 20 * 60;
+const CLASS_SCHEDULE_DELIVERY_MINUTES = new Set([CLASS_SCHEDULE_PRIMARY_DELIVERY_MINUTES, CLASS_SCHEDULE_REMINDER_DELIVERY_MINUTES]);
 const CLASS_UNIFORM_TEXT = "memakai seragam sekolah lama";
 const CLASS_SCHEDULE_FOOTER = "*JIKA TERDAPAT KESALAHAN PADA JADWAL HUBUNGIN NOMOR DARURAT*🗿😅*";
 const DEFAULT_CLASS_SCHEDULE_INVITE_LINK = "https://chat.whatsapp.com/Kp4ULXH1ABh3OS2niLCe8P?s=sh&p=a&ilr=1";
@@ -230,7 +232,7 @@ const DEFAULT_COMMANDS = [
   { command: `${PREFIX}stiker`, description: "Ubah gambar menjadi sticker. Bisa dipakai pada caption gambar atau saat membalas gambar." },
   { command: `${PREFIX}hd`, description: "Memperjelas dan meningkatkan resolusi foto. Bisa dipakai pada caption foto atau saat membalas foto." },
   { command: `${PREFIX}jadwal [hari]`, description: "Menampilkan pelajaran, piket kelas, dan piket MBG VII D. Contoh: !jadwal senin." },
-  { command: `${PREFIX}aktifkan jadwal [tautan grup]`, description: "Khusus DM admin: mengaktifkan kirim jadwal otomatis pukul 17.00 dan 20.00 WIB tanpa menulis perintah di grup." },
+  { command: `${PREFIX}aktifkan jadwal [tautan grup]`, description: "Khusus DM admin: mengaktifkan kirim jadwal otomatis pukul 16.00 dan 20.00 WIB tanpa menulis perintah di grup." },
   { command: `${PREFIX}nonaktifkan jadwal`, description: "Khusus DM admin: menghentikan pengiriman jadwal otomatis." },
   { command: `${PREFIX}sisa`, description: "Menampilkan sisa kuota pertanyaan Anda dan waktu resetnya." },
   { command: `${PREFIX}status`, description: "Khusus DM admin: menampilkan status koneksi, layanan, kuota, dan jadwal bot." },
@@ -2286,7 +2288,7 @@ function isSchoolDayKey(dayKey) {
 }
 
 function shouldPinClassSchedule({ currentDayKey, deliveryMinute, targetDayKey, holiday = false }) {
-  return deliveryMinute === 17 * 60
+  return deliveryMinute === CLASS_SCHEDULE_PRIMARY_DELIVERY_MINUTES
     && isSchoolDayKey(currentDayKey)
     && isSchoolDayKey(targetDayKey)
     && !holiday;
@@ -2514,7 +2516,7 @@ async function activateDefaultScheduleGroup(sock) {
 async function notifyScheduleActivation(sock, result, { retry = false } = {}) {
   const adminJid = getAdminDmJid();
   if (!adminJid) return null;
-  const successText = `[${result.subject || "Grup VII D"}] sudah dijadikan jadwal otomatis. Jadwal akan dikirim pukul 17.00 dan 20.00 WIB.`;
+  const successText = `[${result.subject || "Grup VII D"}] sudah dijadikan jadwal otomatis. Jadwal akan dikirim pukul 16.00 dan 20.00 WIB.`;
   const failureText = "Grup VII D belum berhasil dijadikan jadwal otomatis. Balas pesan ini dengan tautan grup WhatsApp yang benar untuk mencoba ulang.";
   const sent = await sock.sendMessage(adminJid, { text: result.ok ? successText : failureText });
   if (!result.ok) {
@@ -2541,7 +2543,7 @@ async function retryScheduleActivationFromReply(sock, msg, jid, text) {
     BOT_STATE.pinnedClassScheduleMessageKey = null;
     BOT_STATE.scheduleActivationFailureMessageId = "";
     saveBotState();
-    await sock.sendMessage(jid, { text: `[${subject}] sudah dijadikan jadwal otomatis. Jadwal akan dikirim pukul 17.00 dan 20.00 WIB.` }, { quoted: msg });
+    await sock.sendMessage(jid, { text: `[${subject}] sudah dijadikan jadwal otomatis. Jadwal akan dikirim pukul 16.00 dan 20.00 WIB.` }, { quoted: msg });
   } catch (error) {
     console.warn("Percobaan ulang aktivasi jadwal gagal:", error.message);
     await sock.sendMessage(jid, { text: "Tautan grup masih belum bisa dipakai. Balas pesan gagal ini dengan tautan undangan yang benar ya." }, { quoted: msg });
@@ -2699,7 +2701,7 @@ async function sendClassSchedule(sock, date = new Date()) {
   const target = getNextClassScheduleTarget(date);
   const groupJid = BOT_STATE.classScheduleGroupJid;
   const holiday = getHolidayForDate(target.date);
-  const managePin = minute === 17 * 60 && isSchoolDayKey(currentDayKey);
+  const managePin = minute === CLASS_SCHEDULE_PRIMARY_DELIVERY_MINUTES && isSchoolDayKey(currentDayKey);
   if (managePin) {
     const removed = await removePinnedClassSchedule(sock, groupJid);
     if (!removed) {
@@ -3136,7 +3138,7 @@ async function handleMessage(sock, msg) {
         saveBotState();
         await sock.sendMessage(
           jid,
-          { text: `Jadwal otomatis VII D sudah aktif untuk grup *${inviteInfo.subject || "kelas"}*. Bot akan mengirim jadwal pukul 17.00 dan 20.00 WIB tanpa perlu mengirim perintah di grup.\n\nUntuk mematikan, kirim ${PREFIX}nonaktifkan jadwal di DM ini.` },
+          { text: `Jadwal otomatis VII D sudah aktif untuk grup *${inviteInfo.subject || "kelas"}*. Bot akan mengirim jadwal pukul 16.00 dan 20.00 WIB tanpa perlu mengirim perintah di grup.\n\nUntuk mematikan, kirim ${PREFIX}nonaktifkan jadwal di DM ini.` },
           { quoted: msg }
         );
       } catch (error) {
