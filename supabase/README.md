@@ -4,7 +4,7 @@ Bot Pak Burhan menggunakan Supabase untuk menyimpan profil pengguna dan role JFR
 
 ## Persiapan sekali saja
 
-Migration pertama berada di [`migrations/20260815000000_create_profiles.sql`](./migrations/20260815000000_create_profiles.sql), sedangkan tabel role JFR dibuat oleh [`migrations/20260818090000_create_jfr_roles.sql`](./migrations/20260818090000_create_jfr_roles.sql). Setelah secret GitHub Actions disiapkan, workflow `.github/workflows/supabase-migrations.yml` akan menjalankannya ke Supabase ketika migration di-push ke branch `main`. Untuk migrasi pertama yang menghapus tabel lama, pastikan tidak ada data penting yang masih dibutuhkan.
+Migration pertama berada di [`migrations/20260815000000_create_profiles.sql`](./migrations/20260815000000_create_profiles.sql), sedangkan tabel role JFR dibuat oleh [`migrations/20260818084951_create_jfr_roles.sql`](./migrations/20260818084951_create_jfr_roles.sql). Setelah secret GitHub Actions disiapkan, workflow `.github/workflows/supabase-migrations.yml` akan menjalankannya ke Supabase ketika migration di-push ke branch `main`. Untuk migrasi pertama yang menghapus tabel lama, pastikan tidak ada data penting yang masih dibutuhkan.
 
 > Perintah `drop table if exists public.bot_settings;` bersifat destruktif. Pastikan Anda memang tidak lagi membutuhkan data konfigurasi lama sebelum workflow dijalankan. Jika migration pertama ingin dijalankan manual, tempel isi file migration tersebut ke SQL Editor satu kali.
 

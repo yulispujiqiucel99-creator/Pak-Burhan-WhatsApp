@@ -925,7 +925,7 @@ function getTimeReply(profile) {
 async function processProfileOnboarding(profileId, lid, text) {
   const existing = await loadProfileFromSupabase(lid, profileId);
   if (existing?.name && existing?.gender) {
-    await saveProfileToSupabase(lid, existing);
+    // Profil sudah lengkap; tidak perlu menulis ulang ke Supabase pada setiap pesan.
     return { ready: true, profile: existing };
   }
 
@@ -2677,8 +2677,15 @@ function getOfficialHolidayDate(type, results = []) {
   const allowedDomains = ["kemenag.go.id", "kemenkopmk.go.id", "setneg.go.id", "menpan.go.id"];
   const votes = new Map();
   for (const result of results) {
-    const url = String(result.url || "").toLowerCase();
-    if (!allowedDomains.some((domain) => url.includes(domain))) continue;
+    const rawUrl = String(result.url || "").trim();
+    let hostname = "";
+    try {
+      hostname = new URL(rawUrl).hostname.toLowerCase();
+    } catch {
+      continue;
+    }
+    const isAllowedHost = allowedDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+    if (!isAllowedHost) continue;
     const combined = `${result.title || ""} ${result.content || ""}`;
     const holidayPattern = type === "idulfitri" ? /idul[\\s-]*fitri|lebaran/i : /idul[\\s-]*adha|iduladha/i;
     if (!holidayPattern.test(combined)) continue;
@@ -2686,7 +2693,7 @@ function getOfficialHolidayDate(type, results = []) {
     if (!date) continue;
     const key = date.toISOString().slice(0, 10);
     const existing = votes.get(key) || new Set();
-    try { existing.add(new URL(result.url).hostname); } catch { existing.add(url); }
+    existing.add(hostname);
     votes.set(key, existing);
   }
   for (const [dateKey, sources] of votes) {
@@ -2892,15 +2899,14 @@ function startClassScheduleScheduler(sock) {
     sendWeekendAudio(sock, now).catch((error) => {
       console.warn("Scheduler audio akhir pekan gagal:", error.message);
     });
-    discoverHolidayCalendar(now).then((updates) => {
-      if (updates.length) console.log(`Kalender hari raya diperbarui: ${updates.map((item) => `${item.label} ${item.dateKey}`).join(", ")}`);
-      return sendHolidayH1Notification(sock, now);
-    }).catch((error) => {
-      console.warn("Pemeriksaan kalender hari raya gagal:", error.message);
-    });
-    sendHolidayH1Notification(sock, now).catch((error) => {
-      console.warn("Scheduler notifikasi H-1 gagal:", error.message);
-    });
+    discoverHolidayCalendar(now)
+      .then((updates) => {
+        if (updates.length) console.log(`Kalender hari raya diperbarui: ${updates.map((item) => `${item.label} ${item.dateKey}`).join(", ")}`);
+        return sendHolidayH1Notification(sock, now);
+      })
+      .catch((error) => {
+        console.warn("Pemeriksaan kalender hari raya atau notifikasi H-1 gagal:", error.message);
+      });
   };
   checkSchedule();
   classScheduleTimer = setInterval(checkSchedule, 15 * 1000);
@@ -3307,7 +3313,7 @@ async function handleMessage(sock, msg) {
       delete MEMORY[conversationId];
       markDirty();
       saveProfiles();
-      await deleteProfileFromSupabase(senderId);
+      await deleteProfileFromSupabase(senderLid);
       await sock.sendMessage(
         jid,
         { text: "Profil sudah dihapus. Tulis nama kamu terlebih dahulu ya, misalnya: Naufal." },
@@ -3577,6 +3583,7 @@ async function handleMessage(sock, msg) {
 }
 
 let reconnectAttempts = 0;
+let reconnectTimer = null;
 const MAX_RECONNECT = 10;
 
 async function startBot() {
@@ -3661,6 +3668,10 @@ async function startBot() {
       BOT_RUNTIME.connectionState = "terhubung";
       BOT_RUNTIME.connectedAt = new Date();
       reconnectAttempts = 0;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
       console.log("✅ Bot sudah terhubung ke WhatsApp!");
       console.log("Nomor:", sock.user?.id?.split(":")[0] || "-");
       const defaultScheduleActivation = await activateDefaultScheduleGroup(sock);
@@ -3683,13 +3694,18 @@ async function startBot() {
         shouldReconnect
       );
 
-      if (shouldReconnect && reconnectAttempts < MAX_RECONNECT) {
+      if (shouldReconnect && reconnectAttempts < MAX_RECONNECT && !reconnectTimer) {
         reconnectAttempts += 1;
-        const delay = Math.min(5000 * reconnectAttempts, 30000);
+        const reconnectDelay = Math.min(5000 * reconnectAttempts, 30000);
         console.log(
-          `Reconnect #${reconnectAttempts} dalam ${delay / 1000}s...`
+          `Reconnect #${reconnectAttempts} dalam ${reconnectDelay / 1000}s...`
         );
-        setTimeout(() => startBot(), delay);
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          startBot().catch((error) => {
+            console.error("Gagal memulai ulang bot:", error.message);
+          });
+        }, reconnectDelay);
       } else if (code === DisconnectReason.loggedOut) {
         console.log("Logged out. Hapus folder auth_info lalu jalankan ulang.");
       } else {

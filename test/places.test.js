@@ -57,6 +57,7 @@ const {
   isAdminLid,
   isJfrRole,
   isValidJfrCodeInput,
+  getOfficialHolidayDate,
 } = require("../index");
 
 test("JFR, role admin, dan menu rahasia tetap terpisah", () => {
@@ -373,6 +374,19 @@ test("menemukan audio jadwal untuk setiap hari dalam seminggu", () => {
   for (const dayKey of ["senin", "selasa", "rabu", "kamis", "jumat", "sabtu", "minggu"]) {
     assert.match(getClassScheduleAudioPath(dayKey), new RegExp(`${dayKey}\\.ogg$`));
   }
+});
+
+test("hanya menerima hostname resmi saat mengonfirmasi kalender hari raya", () => {
+  const results = [
+    { url: "https://kemenag.go.id/pengumuman", title: "Idulfitri 1 April 2026", content: "Idulfitri jatuh pada 1 April 2026." },
+    { url: "https://subdomain.setneg.go.id/kalender", title: "Idulfitri 1 April 2026", content: "Idulfitri jatuh pada 1 April 2026." },
+    { url: "https://kemenag.go.id.attacker.example/palsu", title: "Idulfitri 1 April 2026", content: "Idulfitri jatuh pada 1 April 2026." },
+  ];
+  const confirmed = getOfficialHolidayDate("idulfitri", results);
+  assert.deepEqual(confirmed, {
+    dateKey: "2026-04-01",
+    sources: ["kemenag.go.id", "subdomain.setneg.go.id"],
+  });
 });
 
 test("membaca hari jadwal dan hanya mengirim pada pukul 16.00 atau 20.00 WIB", () => {
