@@ -50,7 +50,7 @@ Untuk iterasi sticker, jalankan `npm run test:sticker`. Untuk perubahan jadwal, 
 
 ## Penyimpanan Profil di Supabase
 
-Supabase sekarang dipakai untuk menyimpan data kecil profil pengguna pada tabel `profiles`: LID, nama, gender, dan waktu pembaruan. Pengaturan perilaku bot, model Gemini, zona waktu, LID privat, daftar command, jadwal, dan aturan mention tetap berada di kode atau Railway Variables. Jalankan migrasi dan ikuti panduan di [`supabase/README.md`](./supabase/README.md).
+Supabase sekarang dipakai untuk menyimpan profil pengguna pada tabel `profiles` serta role JFR permanen pada tabel `jfr_roles`. Profil menyimpan LID, nama, gender, dan waktu pembaruan; role JFR menyimpan LID dan waktu pemberian akses. State lokal di folder `data/` hanya dipakai sebagai cache/fallback dan backfill, bukan satu-satunya sumber permanen untuk role JFR. Pengaturan perilaku bot, model Gemini, zona waktu, LID privat, daftar command, jadwal, dan aturan mention tetap berada di kode atau Railway Variables. Jalankan migrasi dan ikuti panduan di [`supabase/README.md`](./supabase/README.md).
 
 ## Deployment Railway
 

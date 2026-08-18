@@ -1,10 +1,10 @@
 # Profil Pengguna di Supabase
 
-Bot Pak Burhan menggunakan Supabase hanya untuk menyimpan data kecil profil pengguna. Pengaturan perilaku bot, daftar perintah, model Gemini, zona waktu, dan aturan mention sekarang berada di kode GitHub agar perubahan dapat ditinjau melalui commit.
+Bot Pak Burhan menggunakan Supabase untuk menyimpan profil pengguna dan role JFR permanen. Pengaturan perilaku bot, daftar perintah, model Gemini, zona waktu, dan aturan mention sekarang berada di kode GitHub agar perubahan dapat ditinjau melalui commit.
 
 ## Persiapan sekali saja
 
-Migration pertama berada di [`migrations/20260815000000_create_profiles.sql`](./migrations/20260815000000_create_profiles.sql). Setelah secret GitHub Actions disiapkan, workflow `.github/workflows/supabase-migrations.yml` akan menjalankannya ke Supabase ketika migration di-push ke branch `main`. Untuk migrasi pertama yang menghapus tabel lama, pastikan tidak ada data penting yang masih dibutuhkan.
+Migration pertama berada di [`migrations/20260815000000_create_profiles.sql`](./migrations/20260815000000_create_profiles.sql), sedangkan tabel role JFR dibuat oleh [`migrations/20260818090000_create_jfr_roles.sql`](./migrations/20260818090000_create_jfr_roles.sql). Setelah secret GitHub Actions disiapkan, workflow `.github/workflows/supabase-migrations.yml` akan menjalankannya ke Supabase ketika migration di-push ke branch `main`. Untuk migrasi pertama yang menghapus tabel lama, pastikan tidak ada data penting yang masih dibutuhkan.
 
 > Perintah `drop table if exists public.bot_settings;` bersifat destruktif. Pastikan Anda memang tidak lagi membutuhkan data konfigurasi lama sebelum workflow dijalankan. Jika migration pertama ingin dijalankan manual, tempel isi file migration tersebut ke SQL Editor satu kali.
 
@@ -29,7 +29,7 @@ Gunakan key `service_role` dari **Supabase Dashboard → Project Settings → AP
 
 Saat pengguna pertama kali mengirim nama dan gender, bot menyimpan profil ke Supabase. Profil juga disalin ke cache lokal agar bot tetap dapat memakai data terakhir ketika Supabase sementara tidak tersedia. Perintah `!profil ulang` atau `!reset profil` menghapus profil dari cache lokal dan Supabase.
 
-Data profil tidak dibuka melalui anon key karena tabel menggunakan Row Level Security tanpa policy publik. Bot mengaksesnya memakai `SUPABASE_SERVICE_ROLE_KEY` dari Railway.
+Data profil dan role JFR tidak dibuka melalui anon key karena tabel menggunakan Row Level Security tanpa policy publik. Bot mengaksesnya memakai `SUPABASE_SERVICE_ROLE_KEY` dari Railway. Role JFR dibaca saat startup, role baru disimpan ke Supabase sebelum akses diberikan, dan pencabutan admin menghapus baris remote.
 
 ## Otomatisasi migration
 
@@ -46,6 +46,6 @@ Nilai berikut tetap dikelola melalui kode dan environment Railway, bukan tabel S
 - zona waktu WIB;
 - LID privat yang diizinkan;
 - kata mention massal;
-- jadwal kelas, piket, MBG, audio, kuota, dan state jadwal.
+- jadwal kelas, piket, MBG, audio, kuota, dan state jadwal; role JFR adalah pengecualian dan disimpan di tabel `jfr_roles`.
 
 Jangan menyimpan `GEMINI_API_KEYS`, `GEMINI_API_KEY`, `GEOAPIFY_API_KEY`, atau key rahasia lain di Supabase.

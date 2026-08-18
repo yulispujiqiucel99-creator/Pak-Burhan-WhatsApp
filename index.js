@@ -360,6 +360,76 @@ async function saveProfileToSupabase(lid, profile) {
   }
 }
 
+async function saveJfrRoleToSupabase(lid, grantedAt = new Date().toISOString()) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !lid) return false;
+  try {
+    await axios.post(
+      `${SUPABASE_URL}/rest/v1/jfr_roles`,
+      { lid: String(lid), granted_at: grantedAt },
+      {
+        params: { on_conflict: "lid" },
+        headers: supabaseHeaders("resolution=merge-duplicates,return=minimal"),
+        timeout: 10000,
+      }
+    );
+    return true;
+  } catch (error) {
+    console.warn(`Gagal menyimpan role JFR Supabase (${error.response?.status || "-"}):`, error.message);
+    return false;
+  }
+}
+
+async function loadJfrRolesFromSupabase() {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    console.warn("Supabase belum dikonfigurasi; role JFR permanen belum dapat dipastikan.");
+    return false;
+  }
+  try {
+    const { data } = await axios.get(`${SUPABASE_URL}/rest/v1/jfr_roles`, {
+      params: { select: "lid,granted_at", order: "granted_at.asc", limit: 1000 },
+      headers: supabaseHeaders(),
+      timeout: 10000,
+    });
+    const remoteRoles = Array.isArray(data) ? data : [];
+    const localRoles = BOT_STATE.jfrRoles || {};
+    const mergedRoles = { ...localRoles };
+    for (const role of remoteRoles) {
+      if (!role?.lid) continue;
+      mergedRoles[String(role.lid)] = { grantedAt: role.granted_at || mergedRoles[String(role.lid)]?.grantedAt || "" };
+    }
+    const remoteLids = new Set(remoteRoles.map((role) => String(role?.lid || "")).filter(Boolean));
+    for (const [lid, role] of Object.entries(localRoles)) {
+      if (!remoteLids.has(lid)) {
+        const saved = await saveJfrRoleToSupabase(lid, role?.grantedAt || new Date().toISOString());
+        if (saved) remoteLids.add(lid);
+        else console.warn(`Role JFR lokal ${lid} belum berhasil di-backup ke Supabase.`);
+      }
+    }
+    BOT_STATE.jfrRoles = mergedRoles;
+    saveBotState();
+    console.log(`Role JFR tersinkronisasi dari Supabase: ${Object.keys(mergedRoles).length} role.`);
+    return true;
+  } catch (error) {
+    console.warn(`Gagal memuat role JFR Supabase (${error.response?.status || "-"}); akses JFR baru ditahan demi persistensi.`);
+    return false;
+  }
+}
+
+async function deleteJfrRoleFromSupabase(lid) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !lid) return false;
+  try {
+    await axios.delete(`${SUPABASE_URL}/rest/v1/jfr_roles`, {
+      params: { lid: `eq.${lid}` },
+      headers: supabaseHeaders(),
+      timeout: 10000,
+    });
+    return true;
+  } catch (error) {
+    console.warn(`Gagal mencabut role JFR Supabase (${error.response?.status || "-"}):`, error.message);
+    return false;
+  }
+}
+
 async function deleteProfileFromSupabase(lid) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !lid) return false;
   try {
@@ -674,7 +744,12 @@ async function handleJfrCodeAttempt(sock, jid, lid, text, msg) {
     await sock.sendMessage(jid, { text: `❌ KODE SALAH\nSISA ${remaining}/${JFR_MAX_ATTEMPTS} KESEMPATAN ⚠️` }, { quoted: msg });
     return true;
   }
-  BOT_STATE.jfrRoles[lid] = { grantedAt: new Date().toISOString() };
+  const grantedAt = new Date().toISOString();
+  if (!(await saveJfrRoleToSupabase(lid, grantedAt))) {
+    await sock.sendMessage(jid, { text: "⚠️ Kode JFR benar, tetapi role belum bisa disimpan permanen. Jangan ulangi kode berkali-kali; coba kirim kode ini lagi setelah koneksi database normal ya." }, { quoted: msg });
+    return true;
+  }
+  BOT_STATE.jfrRoles[lid] = { grantedAt };
   delete BOT_STATE.jfrPending[lid];
   delete BOT_STATE.jfrOnboardingCandidates[lid];
   saveBotState();
@@ -3021,6 +3096,10 @@ async function handleMessage(sock, msg) {
         await sock.sendMessage(jid, { text: "LID tersebut belum terdaftar sebagai JFR." }, { quoted: msg });
         return;
       }
+      if (!(await deleteJfrRoleFromSupabase(targetLid))) {
+        await sock.sendMessage(jid, { text: "⚠️ Role JFR belum dicabut karena database permanen tidak bisa dihubungi. Coba lagi setelah koneksi Supabase normal ya." }, { quoted: msg });
+        return;
+      }
       delete BOT_STATE.jfrRoles[targetLid];
       delete BOT_STATE.jfrPending[targetLid];
       delete BOT_STATE.jfrOnboardingCandidates[targetLid];
@@ -3517,6 +3596,7 @@ async function startBot() {
   console.log(`Jina Reader siap${JINA_API_KEY ? " dengan API key" : " tanpa API key (batas rendah)"} untuk membaca isi link.`);
   console.log(`Gemini Vision siap untuk fitur !gambar dengan model: ${GEMINI_VISION_MODEL}`);
   await refreshBotSettings(true);
+  await loadJfrRolesFromSupabase();
   if (!BOT_SETTINGS.private_allowed_lid) {
     console.warn("PRIVATE_ALLOWED_LID masih kosong; semua chat privat akan diabaikan.");
   }
