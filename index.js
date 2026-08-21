@@ -71,9 +71,16 @@ const DEAPI_TIMEOUT_MS = 120000;
 const DEAPI_DAILY_REQUEST_LIMIT = Math.max(1, Number(process.env.DEAPI_DAILY_REQUEST_LIMIT || 10));
 const HD_RESULT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const STICKER_CANVAS_SIZE = 512;
+const DEFAULT_WEEKEND_AUDIO_PATHS = {
+  sabtu: path.join(__dirname, "assets", "weekend-audio", "sabtu.mp3"),
+  minggu: path.join(__dirname, "assets", "weekend-audio", "minggu.mp3"),
+};
 const WEEKEND_AUDIO_PATHS = {
-  sabtu: (process.env.WEEKEND_AUDIO_SATURDAY_PATH || path.join(__dirname, "assets", "weekend-audio", "sabtu.mp3")).trim(),
-  minggu: (process.env.WEEKEND_AUDIO_SUNDAY_PATH || path.join(__dirname, "assets", "weekend-audio", "minggu.mp3")).trim(),
+  // Aset repository menjadi sumber utama agar file lama di volume tidak menimpa revisi baru.
+  sabtu: fs.existsSync(DEFAULT_WEEKEND_AUDIO_PATHS.sabtu)
+    ? DEFAULT_WEEKEND_AUDIO_PATHS.sabtu
+    : (process.env.WEEKEND_AUDIO_SATURDAY_PATH || DEFAULT_WEEKEND_AUDIO_PATHS.sabtu).trim(),
+  minggu: (process.env.WEEKEND_AUDIO_SUNDAY_PATH || DEFAULT_WEEKEND_AUDIO_PATHS.minggu).trim(),
 };
 const WEEKEND_AUDIO_MAX_SECONDS = 2 * 60;
 const WEEKEND_AUDIO_DELIVERY_MINUTES = 7 * 60;
@@ -3778,6 +3785,7 @@ module.exports = {
   getClassScheduleAudioPath,
   getNextClassScheduleTarget,
   WEEKEND_AUDIO_DELIVERY_MINUTES,
+  WEEKEND_AUDIO_PATHS,
   formatClassScheduleDate,
   isClassScheduleDeliveryTime,
   normalizePlaceFeature,

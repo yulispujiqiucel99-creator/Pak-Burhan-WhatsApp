@@ -11,6 +11,7 @@ const {
   getNextClassScheduleTarget,
   sendClassScheduleContent,
   WEEKEND_AUDIO_DELIVERY_MINUTES,
+  WEEKEND_AUDIO_PATHS,
   isClassScheduleDeliveryTime,
   parseIndonesianDate,
   getOfficialHolidayDate,
@@ -29,6 +30,11 @@ test("pin hanya aktif pada pengiriman pukul 16.00 untuk jadwal sekolah", () => {
   assert.equal(shouldPinClassSchedule({ currentDayKey: "sabtu", deliveryMinute: 16 * 60, targetDayKey: "senin" }), false);
   assert.equal(shouldPinClassSchedule({ currentDayKey: "jumat", deliveryMinute: 16 * 60, targetDayKey: "sabtu" }), false);
   assert.equal(shouldPinClassSchedule({ currentDayKey: "minggu", deliveryMinute: 16 * 60, targetDayKey: "senin", holiday: true }), false);
+});
+
+test("test cepat: aset Sabtu memilih file repository terbaru", () => {
+  assert.match(WEEKEND_AUDIO_PATHS.sabtu, /assets[\\/]weekend-audio[\\/]sabtu\.mp3$/);
+  assert.equal(fs.existsSync(WEEKEND_AUDIO_PATHS.sabtu), true);
 });
 
 test("test cepat: audio hari libur dijadwalkan pukul 07.00 WIB", () => {
