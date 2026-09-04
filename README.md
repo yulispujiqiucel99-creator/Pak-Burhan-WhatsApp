@@ -10,7 +10,7 @@ Untuk menghemat limit AI, **grup** memakai jeda pemrosesan 20 detik. Pesan bergu
 
 Setiap LID memiliki paling banyak **20 pertanyaan dalam jendela 24 jam**. Yang dihitung adalah permintaan yang benar-benar akan diproses, termasuk pencarian tempat dan pencarian internet; onboarding, `!help`, `!sisa`, `!status`, respons waktu, moderasi, serta basa-basi tidak menghabiskan kuota. Saat kuota penuh, bot mengirimkan pesan tunggu 24 jam. Kuota tersimpan di volume Railway sehingga tidak hilang saat bot restart.
 
-Bot beristirahat di seluruh grup setiap hari pada **21.30–04.00 WIB**. Tepat pukul 21.30, bot mengirim pesan penutup satu kali ke tiap grup lalu tidak merespons pesan grup—termasuk dari admin grup—sampai pukul 04.00. Chat DM dari LID admin tetap tersedia 24 jam, tetapi tetap mengikuti batas 20 pertanyaan per 24 jam.
+Bot beristirahat di seluruh grup setiap hari pada **21.30–04.00 WIB**. Tepat pukul 21.30, bot mengirim satu peringatan tidur ke tiap grup, lalu pada pukul 04.00 mengirim peringatan bangun. Selama waktu istirahat, bot tidak merespons pesan grup—termasuk dari admin grup. Chat DM dari LID admin tetap tersedia 24 jam, tetapi tetap mengikuti batas 20 pertanyaan per 24 jam.
 
 ## Setup Lokal
 
@@ -24,7 +24,7 @@ Isi `GEMINI_API_KEYS` pada `.env` sebelum menjalankan bot. API key dibuat dari [
 
 ### Test
 
-Untuk iterasi sticker, jalankan `npm run test:sticker`. Untuk perubahan jadwal, jalankan `npm run test:jadwal`. Pemeriksaan penuh tersedia melalui `npm test` dan dijalankan sebelum rilis besar.
+Untuk iterasi sticker, jalankan `npm run test:sticker`. Pemeriksaan penuh tersedia melalui `npm test` dan dijalankan sebelum rilis besar.
 
 ## Variabel Lingkungan
 
@@ -44,13 +44,12 @@ Untuk iterasi sticker, jalankan `npm run test:sticker`. Untuk perubahan jadwal, 
 | `TAVILY_API_KEY` | Opsional; dipakai untuk fitur pencarian internet. |
 | `VIRUSTOTAL_API_KEY` | Diperlukan untuk `!ceklink` dan pembacaan link otomatis. Dipakai untuk memeriksa URL terhadap deteksi malware/phishing. Simpan hanya di Railway Variables. |
 | `JINA_API_KEY` | Opsional untuk `!ceklink`; dipakai agar Jina Reader mendapat batas akses lebih tinggi saat mengambil teks halaman. |
-| `WEEKEND_AUDIO_SATURDAY_PATH` / `WEEKEND_AUDIO_SUNDAY_PATH` | Opsional; untuk mengganti path audio. Secara default bot membaca file dari `assets/weekend-audio` di repository. |
 | `GEOAPIFY_API_KEY` | Opsional; dipakai oleh `!tempat`. Buat key gratis di [Geoapify MyProjects](https://myprojects.geoapify.com/), lalu simpan hanya di Railway Variables. |
 | `PREFIX` | Awalan perintah bot; default `!`. |
 
 ## Penyimpanan Profil di Supabase
 
-Supabase sekarang dipakai untuk menyimpan profil pengguna pada tabel `profiles` serta role JFR permanen pada tabel `jfr_roles`. Profil menyimpan LID, nama, gender, dan waktu pembaruan; role JFR menyimpan LID dan waktu pemberian akses. State lokal di folder `data/` hanya dipakai sebagai cache/fallback dan backfill, bukan satu-satunya sumber permanen untuk role JFR. Pengaturan perilaku bot, model Gemini, zona waktu, LID privat, daftar command, jadwal, dan aturan mention tetap berada di kode atau Railway Variables. Jalankan migrasi dan ikuti panduan di [`supabase/README.md`](./supabase/README.md).
+Supabase sekarang dipakai untuk menyimpan profil pengguna pada tabel `profiles` serta role JFR permanen pada tabel `jfr_roles`. Profil menyimpan LID, nama, gender, dan waktu pembaruan; role JFR menyimpan LID dan waktu pemberian akses. State lokal di folder `data/` hanya dipakai sebagai cache/fallback dan backfill, bukan satu-satunya sumber permanen untuk role JFR. Pengaturan perilaku bot, model Gemini, zona waktu, LID privat, daftar command, dan aturan mention tetap berada di kode atau Railway Variables. Jalankan migrasi dan ikuti panduan di [`supabase/README.md`](./supabase/README.md).
 
 ## Deployment Railway
 
@@ -79,22 +78,9 @@ Gunakan command manual:
 !cari https://contoh.com/artikel
 ```
 
-Pesan biasa yang mengandung URL pada grup jadwal aktif akan diproses otomatis tanpa tag bot. Pemeriksaan otomatis hanya memanggil VirusTotal dan tidak memanggil Jina Reader maupun Gemini. Bot memberi reaksi `🧐` saat memeriksa; jika hasilnya `clean`, reaksinya diganti menjadi `✅` tanpa pesan teks. Jika VirusTotal masih `pending` atau mengalami error, bot tidak memberi `❌`, tidak menghapus pesan, dan tidak mengirim pesan teks karena status tersebut belum membuktikan bahaya. Jika link terdeteksi mencurigakan atau berbahaya secara final, bot memberi reaksi `❌`, membalas pesan, menghapus pesan sumber bila memiliki izin admin, lalu mengirim penjelasan risiko. Bot memeriksa maksimal tiga URL dalam satu pesan.
-
-Hasil pemeriksaan otomatis disimpan sebagai cache sementara selama 24 jam agar URL yang sama tidak memakan request VirusTotal berulang. Cache otomatis dibersihkan setiap pukul **00.30 WIB** dan tidak menyentuh `memory.json`, `auth_info`, kuota, status jadwal, maupun profil. Link dengan command manual tetap memakai alur VirusTotal → Jina Reader → Gemini, dengan maksimal **5.000 karakter total** dari teks halaman ke Gemini. Konteks riwayat untuk analisis link dan panjang jawaban juga dibatasi agar tidak melewati batas token model. **Hasil “belum terdeteksi” bukan jaminan mutlak bahwa sebuah URL aman.** Jangan kirim URL yang mengandung token login, reset password, undangan privat, atau data pribadi karena URL tersebut dikirim ke layanan pihak ketiga.
+Hasil pemeriksaan otomatis disimpan sebagai cache sementara selama 24 jam agar URL yang sama tidak memakan request VirusTotal berulang. Cache otomatis dibersihkan setiap pukul **00.30 WIB** dan tidak menyentuh `memory.json`, `auth_info`, kuota, maupun profil. Link dengan command manual tetap memakai alur VirusTotal → Jina Reader → Gemini, dengan maksimal **5.000 karakter total** dari teks halaman ke Gemini. Konteks riwayat untuk analisis link dan panjang jawaban juga dibatasi agar tidak melewati batas token model. **Hasil “belum terdeteksi” bukan jaminan mutlak bahwa sebuah URL aman.** Jangan kirim URL yang mengandung token login, reset password, undangan privat, atau data pribadi karena URL tersebut dikirim ke layanan pihak ketiga.
 
 VirusTotal Public API mempunyai batas penggunaan dan aturan penggunaan produk. Untuk detailnya, lihat [dokumentasi VirusTotal Public API](https://docs.virustotal.com/reference/public-vs-premium-api). Jina Reader dapat dibaca melalui [dokumentasi resmi Jina Reader](https://jina.ai/reader/). API key tidak pernah dicetak ke chat, log, atau repository.
-
-## Audio Akhir Pekan
-
-Fitur pencarian musik dan command `!musik` tidak digunakan lagi. Audio akhir pekan memakai dua file lokal yang disimpan di repository GitHub pada folder berikut:
-
-```text
-assets/weekend-audio/sabtu.mp3
-assets/weekend-audio/minggu.mp3
-```
-
-Bot akan mengirim file Sabtu pada pukul **07.00 WIB** hari Sabtu dan file Minggu pada pukul **07.00 WIB** hari Minggu, bersama keterangan libur. Selain itu, command `!jadwal sabtu` dan `!jadwal minggu` juga mengirim audio libur masing-masing bersama teks jadwal. Setiap file dibatasi maksimal **2 menit**, dikonversi ke Ogg/Opus agar tampil sebagai voice note, lalu hanya file hasil konversi sementara yang dihapus. File sumber tetap ada di GitHub agar dapat dipakai pada akhir pekan berikutnya. Status pengiriman otomatis disimpan agar restart bot tidak mengirim ulang pada tanggal yang sama.
 
 ## Mencari Tempat dan Mengirim Lokasi
 
@@ -120,24 +106,6 @@ Bot hanya memproses foto JPG, PNG, atau WebP dengan ukuran maksimum **20 MB**. S
 Fitur sticker hanya mendukung konversi gambar menjadi sticker menggunakan pemrosesan lokal. Di grup, command harus diawali mention bot sesuai aturan umum. Kirim gambar dengan caption **`@bot !stiker`**, reply gambar lalu kirim **`@bot !stiker`**, atau gunakan alias **`!sticker`**.
 
 Bot menerima gambar JPG, PNG, dan WebP dengan ukuran maksimum **10 MB**. Gambar diproses sementara menjadi WebP, lalu dikirim sebagai sticker dan tidak disimpan ke Supabase, `MEMORY`, atau repository. Fitur sticker teks, Brat, IQC, dan overlay teks tidak tersedia.
-
-## Jadwal Kelas VII D
-
-Perintah `!jadwal` menampilkan satu pesan yang memuat daftar pelajaran, piket kelas, dan piket MBG untuk hari berjalan. Untuk melihat hari tertentu, gunakan `!jadwal senin` sampai `!jadwal minggu`. Sabtu dan Minggu akan menampilkan informasi libur.
-
-Bot juga memahami pertanyaan jadwal tanpa perintah, misalnya `Pak, jadwal besok apa?`, `Piket hari ini siapa?`, atau `Pelajaran Senin apa, Pak?`. Bot menentukan hari berdasarkan **WIB** dan menjawab langsung dari data jadwal, sehingga pertanyaan tersebut tidak memakai kuota AI.
-
-Grup VII D dari tautan default yang sudah ditentukan akan dicoba diaktifkan otomatis setiap kali bot tersambung. Jika berhasil, admin menerima pesan `[nama grup] sudah dijadikan jadwal otomatis`; jika gagal, admin menerima pesan gagal di DM. Admin dapat membalas langsung pesan gagal tersebut dengan tautan grup baru untuk mencoba ulang. Bot memeriksa tautan dan memastikan akun bot sudah menjadi anggota grup, tetapi tidak akan bergabung otomatis melalui tautan tersebut. Setelah aktif, bot mengirimkan **jadwal hari berikutnya** pada **16.00 WIB** dan **20.00 WIB**. Pada pengiriman pukul 16.00 di hari sekolah, bot menghapus pesan jadwal sekolah yang sebelumnya dipin, lalu mem-pin pesan jadwal terbaru untuk hari sekolah berikutnya. Pukul 20.00 hanya mengirim ulang jadwal sebagai pengingat dan tidak mengubah pin. Pin tidak digunakan untuk Sabtu, Minggu, atau pesan hari libur; pada kondisi tersebut jadwal tetap dikirim normal. Pada Sabtu dan Minggu, kedua waktu tersebut langsung menargetkan jadwal Senin. Audio pagi akhir pekan dikirim terpisah pada 07.00 WIB. Voice note menggunakan aset Ogg/Opus di `assets/schedule-audio/`, sedangkan teks tetap dikirim agar daftar pelajaran dan informasi libur mudah dibaca. Perintah manual `!jadwal senin` sampai `!jadwal minggu` juga mengirim voice note sesuai hari. Setiap pesan teks jadwal diakhiri catatan darurat sesuai format yang telah ditetapkan. Admin dapat menghentikannya dari DM dengan `!nonaktifkan jadwal`; pada koneksi berikutnya, target default akan dicoba diaktifkan kembali.
-
-## Aset Audio Jadwal
-
-Tujuh aset voice note jadwal disimpan dengan nama hari yang sederhana: `senin.ogg`, `selasa.ogg`, `rabu.ogg`, `kamis.ogg`, `jumat.ogg`, `sabtu.ogg`, dan `minggu.ogg`. Semua aset dikonversi ke **Opus mono 48 kHz** agar dikirim sebagai voice note WhatsApp. Bagian paling bawah pesan teks jadwal memuat:
-
-```text
-*JIKA TERDAPAT KESALAHAN PADA JADWAL HUBUNGIN NOMOR DARURAT*🗿😅*
-```
-
-File audio tidak memuat API key dan dapat diganti dengan file baru menggunakan nama yang sama, lalu dilakukan commit dan deploy ulang.
 
 ## Memeriksa Kuota dan Status
 

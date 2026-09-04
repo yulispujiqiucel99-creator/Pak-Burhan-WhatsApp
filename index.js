@@ -71,17 +71,6 @@ const DEAPI_TIMEOUT_MS = 120000;
 const DEAPI_DAILY_REQUEST_LIMIT = Math.max(1, Number(process.env.DEAPI_DAILY_REQUEST_LIMIT || 10));
 const HD_RESULT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const STICKER_CANVAS_SIZE = 512;
-const DEFAULT_WEEKEND_AUDIO_PATHS = {
-  sabtu: path.join(__dirname, "assets", "weekend-audio", "sabtu.mp3"),
-  minggu: path.join(__dirname, "assets", "weekend-audio", "minggu.mp3"),
-};
-const WEEKEND_AUDIO_PATHS = {
-  // Aset repository menjadi sumber utama agar file lama di volume tidak menimpa revisi baru.
-  sabtu: fs.existsSync(DEFAULT_WEEKEND_AUDIO_PATHS.sabtu)
-    ? DEFAULT_WEEKEND_AUDIO_PATHS.sabtu
-    : (process.env.WEEKEND_AUDIO_SATURDAY_PATH || DEFAULT_WEEKEND_AUDIO_PATHS.sabtu).trim(),
-  minggu: (process.env.WEEKEND_AUDIO_SUNDAY_PATH || DEFAULT_WEEKEND_AUDIO_PATHS.minggu).trim(),
-};
 const PREFIX = process.env.PREFIX || "!";
 const AUTH_METHOD = (process.env.AUTH_METHOD || "qr").toLowerCase();
 const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
@@ -103,69 +92,12 @@ const PROFILES_FILE = path.join(DATA_DIR, "profiles.json");
 const QUESTION_USAGE_FILE = path.join(DATA_DIR, "question_usage.json");
 const BOT_STATE_FILE = path.join(DATA_DIR, "bot_state.json");
 const TOOL_CONTEXT_FILE = path.join(DATA_DIR, "tool_context.json");
-const WEEKEND_AUDIO_TEMP_DIR = path.join(DATA_DIR, "weekend-audio-tmp");
 const DAILY_QUESTION_LIMIT = 20;
 const JFR_CODE_LENGTH = 7;
 const JFR_CODE_TTL_MS = 60 * 60 * 1000;
 const JFR_MAX_ATTEMPTS = 3;
 const JFR_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 const DAILY_QUESTION_WINDOW_MS = 24 * 60 * 60 * 1000;
-const CLASS_UNIFORM_TEXT = "memakai seragam sekolah lama";
-const CLASS_SCHEDULE_FOOTER = "*JIKA TERDAPAT KESALAHAN PADA JADWAL HUBUNGIN NOMOR DARURAT*🗿😅*";
-const DEFAULT_CLASS_SCHEDULE_INVITE_LINK = "https://chat.whatsapp.com/Kp4ULXH1ABh3OS2niLCe8P?s=sh&p=a&ilr=1";
-const DEFAULT_CLASS_SCHEDULE_INVITE_CODE = "Kp4ULXH1ABh3OS2niLCe8P";
-const CLASS_SCHEDULE_AUDIO_DIR = path.join(__dirname, "assets", "schedule-audio");
-const CLASS_SCHEDULE_AUDIO_FILES = Object.fromEntries(
-  ["senin", "selasa", "rabu", "kamis", "jumat", "sabtu", "minggu"].map((dayKey) => [
-    dayKey,
-    path.join(CLASS_SCHEDULE_AUDIO_DIR, `${dayKey}.ogg`),
-  ])
-);
-
-const CLASS_WEEKLY_SCHEDULE = {
-  senin: {
-    label: "Senin",
-    lessons: ["Upacara", "Matematika", "PAI dan BP", "Pend. Pancasila", "Bhs. Indonesia", "IPS"],
-    classDuty: ["Farida", "Rara", "Nayla", "Loveya", "Lulu", "Satria", "Kenzie"],
-    mbgDuty: ["Farida", "Nayla", "Lulu", "Satria", "Alby", "Amanda"],
-  },
-  selasa: {
-    label: "Selasa",
-    lessons: ["Literasi", "Bhs. Inggris", "PJOK", "PAI dan BP", "Bhs. Indonesia", "Informatika"],
-    classDuty: ["Nadiah", "Vionna", "Humaira", "Altaf", "Ridwan", "Azka", "Kayana"],
-    mbgDuty: ["Vionna", "Altaf", "Ridwan", "Azka", "Fabian", "Queensa"],
-  },
-  rabu: {
-    label: "Rabu",
-    lessons: ["Literasi", "Matematika", "IPS", "IPA", "Bhs. Inggris"],
-    classDuty: ["Fabian", "Queensa", "Fazila", "Dewi", "Alby", "Amanda"],
-    mbgDuty: ["Fazila", "Rara", "Kayana", "Kenzie", "Kenzio", "Khanza"],
-  },
-  kamis: {
-    label: "Kamis",
-    lessons: ["Literasi", "IPA", "Pend. Pancasila", "Prakarya/SBDP", "Informatika", "PJOK", "Bhs. Indonesia"],
-    classDuty: ["Yodha", "Khanza", "Zayda", "Kinar", "Kenzio", "Nara"],
-    mbgDuty: ["Kinar", "Humaira", "Lintang", "Loveya", "Mayesa", "Naufal", "Nadiah"],
-  },
-  jumat: {
-    label: "Jumat",
-    lessons: ["Pagi Ceria", "Jumat Bersih", "Pembinaan Wali Kelas", "Bhs. Jawa", "Prakarya/SBDP"],
-    classDuty: ["Keefa", "Aqila", "Lintang", "Mayesa", "Naufal", "Azizah"],
-    mbgDuty: ["Keefa", "Aqila", "Azizah", "Yodha", "Zayda", "Nara", "Dewi"],
-  },
-};
-
-const WEEKDAY_ALIASES = {
-  senin: "senin",
-  selasa: "selasa",
-  rabu: "rabu",
-  kamis: "kamis",
-  jumat: "jumat",
-  sabtu: "sabtu",
-  minggu: "minggu",
-  ahad: "minggu",
-};
-
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const SYSTEM_PROMPT = `
@@ -219,9 +151,8 @@ const DEFAULT_COMMANDS = [
   { command: `${PREFIX}gambar [pertanyaan]`, description: "Kirim foto dengan caption !gambar untuk dianalisis. Contoh: !gambar tolong jelaskan soal ini." },
   { command: `${PREFIX}stiker`, description: "Ubah gambar menjadi sticker. Bisa dipakai pada caption gambar atau saat membalas gambar." },
   { command: `${PREFIX}hd`, description: "Memperjelas dan meningkatkan resolusi foto. Bisa dipakai pada caption foto atau saat membalas foto." },
-  { command: `${PREFIX}jadwal [hari]`, description: "Menampilkan pelajaran, piket kelas, dan piket MBG VII D. Contoh: !jadwal senin." },
   { command: `${PREFIX}sisa`, description: "Menampilkan sisa kuota pertanyaan Anda dan waktu resetnya." },
-  { command: `${PREFIX}status`, description: "Khusus DM admin: menampilkan status koneksi, layanan, kuota, dan jadwal bot." },
+  { command: `${PREFIX}status`, description: "Khusus DM admin: menampilkan status koneksi, layanan, dan kuota." },
   { command: `${PREFIX}profil ulang / ${PREFIX}reset profil`, description: "Menghapus nama, gender, dan riwayat chat Anda untuk diisi ulang." },
   { command: "Tag di grup", description: "Tag bot lalu tulis pertanyaan; bot diam pada @semua atau @everyone." },
 ];
@@ -447,11 +378,13 @@ let PROFILES = {};
 let QUESTION_USAGE = {};
 let TOOL_CONTEXT = {};
 let BOT_STATE = {
-  classScheduleGroupJid: "",
+  lastGroupRestDate: "",
+  lastGroupWakeDate: "",
   jfrRoles: {},
   jfrPending: {},
   jfrOnboardingCandidates: {},
 };
+let groupRestTimer = null;
 let autoLinkCacheTimer = null;
 const AUTO_LINK_CACHE = new Map();
 let memoryDirty = false;
@@ -459,6 +392,10 @@ let memoryUpdateCount = 0;
 let lastMemorySave = Date.now();
 const MEMORY_SAVE_EVERY_N = 5;
 const MEMORY_SAVE_INTERVAL = 30 * 1000;
+const GROUP_REST_START_MINUTES = 21 * 60 + 30;
+const GROUP_REST_END_MINUTES = 4 * 60;
+const GROUP_REST_MESSAGE = "akhirnya tugas saya selesai wah udh larut malam saya harus tidur secepatnya buat murid murid saya, hmm... ok alarm 04.00 udh saya jadwal buat persiapan💤😴";
+const GROUP_WAKE_MESSAGE = "Selamat pagi, Pak Burhan sudah bangun dan siap membantu lagi. Semoga harinya lancar ya! ☀️";
 
 function loadToolContext() {
   try {
@@ -549,11 +486,11 @@ function loadBotState() {
     if (fs.existsSync(BOT_STATE_FILE)) {
           const parsed = JSON.parse(fs.readFileSync(BOT_STATE_FILE, "utf8"));
       BOT_STATE = parsed && typeof parsed === "object"
-        ? { classScheduleGroupJid: "", jfrRoles: {}, jfrPending: {}, jfrOnboardingCandidates: {}, ...parsed }
-        : { classScheduleGroupJid: "", jfrRoles: {}, jfrPending: {}, jfrOnboardingCandidates: {} };
+        ? { lastGroupRestDate: "", lastGroupWakeDate: "", jfrRoles: {}, jfrPending: {}, jfrOnboardingCandidates: {}, ...parsed }
+        : { lastGroupRestDate: "", lastGroupWakeDate: "", jfrRoles: {}, jfrPending: {}, jfrOnboardingCandidates: {} };
     }
   } catch {
-    BOT_STATE = { classScheduleGroupJid: "", jfrRoles: {}, jfrPending: {}, jfrOnboardingCandidates: {} };
+    BOT_STATE = { lastGroupRestDate: "", lastGroupWakeDate: "", jfrRoles: {}, jfrPending: {}, jfrOnboardingCandidates: {} };
   }
 }
 
@@ -819,7 +756,6 @@ function buildAdminStatusReply(lid, now = Date.now()) {
     `deAPI HD: ${DEAPI_API_KEY && DEAPI_ENABLED ? `siap (${DEAPI_MODEL}, ${getDeApiUsageStatus().remaining}/${DEAPI_DAILY_REQUEST_LIMIT} request harian tersisa)` : "fallback CPU aktif"}`,
     `Kuota admin: ${quota.used}/${DAILY_QUESTION_LIMIT} terpakai, ${quota.remaining} tersisa`,
     `Reset kuota admin: ${resetText}`,
-    `Pemindai link otomatis: ${BOT_STATE.classScheduleGroupJid ? "aktif pada target yang pernah dipilih" : "tidak aktif"}`,
     `Zona waktu: ${BOT_SETTINGS.timezone}`,
   ].join("\n");
 }
@@ -1371,8 +1307,7 @@ function normalizeGroupJid(jid) {
 
 function isAutoLinkScanGroup(jid) {
   const incoming = normalizeGroupJid(jid);
-  const active = normalizeGroupJid(BOT_STATE.classScheduleGroupJid);
-  return Boolean(incoming && active && incoming === active && incoming.endsWith("@g.us"));
+  return false;
 }
 
 function hasManualLinkCommand(text) {
@@ -2301,198 +2236,6 @@ function cleanMentions(text) {
 }
 
 
-function getClassScheduleDayKey(date = new Date()) {
-  try {
-    const weekday = new Intl.DateTimeFormat("en-US", {
-      timeZone: BOT_SETTINGS.timezone,
-      weekday: "long",
-    }).format(date).toLowerCase();
-    return {
-      monday: "senin",
-      tuesday: "selasa",
-      wednesday: "rabu",
-      thursday: "kamis",
-      friday: "jumat",
-      saturday: "sabtu",
-      sunday: "minggu",
-    }[weekday] || "";
-  } catch {
-    return ["minggu", "senin", "selasa", "rabu", "kamis", "jumat", "sabtu"][date.getUTCDay()];
-  }
-}
-
-function getNextClassScheduleTarget(date = new Date()) {
-  const currentDayKey = getClassScheduleDayKey(date);
-  const daysToAdd = currentDayKey === "sabtu" ? 2 : currentDayKey === "minggu" ? 1 : 1;
-  const targetDate = new Date(date.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
-  return {
-    dayKey: getClassScheduleDayKey(targetDate),
-    date: targetDate,
-    dateKey: getZonedClockParts(targetDate).dateKey,
-  };
-}
-
-function isSchoolDayKey(dayKey) {
-  return ["senin", "selasa", "rabu", "kamis", "jumat"].includes(String(dayKey || "").toLowerCase());
-}
-
-function shouldPinClassSchedule({ currentDayKey, deliveryMinute, targetDayKey, holiday = false }) {
-  return deliveryMinute === CLASS_SCHEDULE_PRIMARY_DELIVERY_MINUTES
-    && isSchoolDayKey(currentDayKey)
-    && isSchoolDayKey(targetDayKey)
-    && !holiday;
-}
-
-function formatClassScheduleDate(date = new Date()) {
-  try {
-    const parts = new Intl.DateTimeFormat("id-ID", {
-      timeZone: BOT_SETTINGS.timezone,
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    }).formatToParts(date);
-    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-    return `${values.day} ${values.month} ${values.year}, ${String(values.weekday || "").toLowerCase()}`;
-  } catch {
-    return date.toISOString().slice(0, 10);
-  }
-}
-
-function getClassScheduleAudioPath(dayKey) {
-  const audioPath = CLASS_SCHEDULE_AUDIO_FILES[dayKey];
-  return audioPath && fs.existsSync(audioPath) ? audioPath : null;
-}
-
-function formatClassScheduleMessage(dayKey, date = new Date()) {
-  const schedule = CLASS_WEEKLY_SCHEDULE[dayKey];
-  const label = schedule?.label || (dayKey === "sabtu" ? "Sabtu" : "Minggu");
-  const header = `*INFORMASI ${label.toUpperCase()}*\n_${formatClassScheduleDate(date)}_`;
-  if (!schedule) {
-    return `${header}\n\n🏖️ Libur\nHari ini libur. Selamat beristirahat dan siapkan diri untuk sekolah berikutnya. 🙂\n\n${CLASS_SCHEDULE_FOOTER}`;
-  }
-
-  const lessons = schedule.lessons.map((lesson) => `- ${lesson}`).join("\n");
-  const classDuty = schedule.classDuty.map((name) => `- ${name}`).join("\n");
-  const mbgDuty = schedule.mbgDuty.map((name) => `- ${name}`).join("\n");
-  return [
-    header,
-    "",
-    "👔 Seragam",
-    CLASS_UNIFORM_TEXT,
-    "",
-    "📔 Jadwal",
-    lessons,
-    "",
-    "🛋️ Piket kelas",
-    `*${label.toUpperCase()}*`,
-    classDuty,
-    "",
-    "🍴 Piket MBG",
-    `*${label.toUpperCase()}*`,
-    mbgDuty,
-    "",
-    CLASS_SCHEDULE_FOOTER,
-  ].join("\n");
-}
-
-async function sendClassScheduleContent(sock, jid, dayKey, date = new Date(), { includeAudio = false, quoted = null } = {}) {
-  const sendOptions = quoted ? { quoted } : undefined;
-  const audioPath = includeAudio ? getClassScheduleAudioPath(dayKey) : null;
-  let audioMessage = null;
-  if (audioPath) {
-    audioMessage = await sock.sendMessage(
-      jid,
-      {
-        audio: fs.readFileSync(audioPath),
-        mimetype: "audio/ogg; codecs=opus",
-        ptt: true,
-      },
-      sendOptions
-    );
-  }
-  const textMessage = await sock.sendMessage(jid, { text: formatClassScheduleMessage(dayKey, date) }, sendOptions);
-  return { audioMessage, textMessage };
-}
-
-function parseClassScheduleDay(text, date = new Date()) {
-  const parts = String(text || "").trim().toLowerCase().split(/\s+/);
-  const day = parts[1];
-  if (!day) return getClassScheduleDayKey(date);
-  return WEEKDAY_ALIASES[day] || "";
-}
-
-function addCalendarDays(date, days) {
-  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
-}
-
-function getUpcomingScheduleDate(dayKey, date = new Date()) {
-  const dayOrder = ["minggu", "senin", "selasa", "rabu", "kamis", "jumat", "sabtu"];
-  const currentIndex = dayOrder.indexOf(getClassScheduleDayKey(date));
-  const targetIndex = dayOrder.indexOf(dayKey);
-  if (currentIndex < 0 || targetIndex < 0) return date;
-  return addCalendarDays(date, (targetIndex - currentIndex + 7) % 7);
-}
-
-function parseNaturalScheduleRequest(text, date = new Date()) {
-  const normalized = String(text || "")
-    .toLowerCase()
-    .replace(/[^a-z\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!normalized) return null;
-
-  const refersToSchedule = /\b(jadwal|pelajaran|mapel|mata pelajaran|piket|seragam)\b/.test(normalized);
-  if (!refersToSchedule) return null;
-
-  if (/\b(besok|esok)\b/.test(normalized)) {
-    const targetDate = addCalendarDays(date, 1);
-    return { dayKey: getClassScheduleDayKey(targetDate), targetDate, reference: "besok" };
-  }
-  if (/\b(hari ini|sekarang)\b/.test(normalized)) {
-    return { dayKey: getClassScheduleDayKey(date), targetDate: date, reference: "hari ini" };
-  }
-
-  const matchedDay = Object.keys(WEEKDAY_ALIASES).find((day) => new RegExp(`\\b${day}\\b`).test(normalized));
-  if (matchedDay) {
-    const dayKey = WEEKDAY_ALIASES[matchedDay];
-    return { dayKey, targetDate: getUpcomingScheduleDate(dayKey, date), reference: matchedDay };
-  }
-  return null;
-}
-
-function extractWhatsAppGroupInviteCode(value) {
-  const text = String(value || "").trim();
-  const match = text.match(/chat\.whatsapp\.com\/([A-Za-z0-9_-]{10,})/i);
-  return match?.[1] || "";
-}
-
-function getAdminDmJid() {
-  const lid = String(BOT_SETTINGS.private_allowed_lid || "").replace(/\D/g, "");
-  return lid ? `${lid}@lid` : "";
-}
-
-function getQuotedMessageId(msg) {
-  const message = msg?.message || {};
-  const contextInfo =
-    message.extendedTextMessage?.contextInfo ||
-    message.imageMessage?.contextInfo ||
-    message.videoMessage?.contextInfo ||
-    message.documentMessage?.contextInfo ||
-    null;
-  return contextInfo?.stanzaId || "";
-}
-
-async function resolveScheduleGroupFromInvite(sock, inviteCode) {
-  const inviteInfo = await sock.groupGetInviteInfo(inviteCode);
-  const groupJid = inviteInfo?.id;
-  if (!groupJid || !isJidGroup(groupJid)) {
-    throw new Error("JID grup dari tautan tidak valid");
-  }
-  await sock.groupMetadata(groupJid);
-  return { groupJid, subject: inviteInfo.subject || "kelas" };
-}
-
 function getZonedClockParts(date = new Date()) {
   try {
     const parts = new Intl.DateTimeFormat("en-CA", {
@@ -2518,6 +2261,61 @@ function getZonedClockParts(date = new Date()) {
       minute: fallback.getUTCMinutes(),
     };
   }
+}
+
+function isGroupRestTime(date = new Date()) {
+  const { hour, minute } = getZonedClockParts(date);
+  const currentMinutes = hour * 60 + minute;
+  return currentMinutes >= GROUP_REST_START_MINUTES || currentMinutes < GROUP_REST_END_MINUTES;
+}
+
+function isGroupRestAnnouncementTime(date = new Date()) {
+  const { hour, minute } = getZonedClockParts(date);
+  return hour === 21 && minute === 30;
+}
+
+function isGroupWakeAnnouncementTime(date = new Date()) {
+  const { hour, minute } = getZonedClockParts(date);
+  return hour === 4 && minute === 0;
+}
+
+async function announceGroupRest(sock, date = new Date()) {
+  const { dateKey } = getZonedClockParts(date);
+  const announcingSleep = isGroupRestAnnouncementTime(date);
+  const announcingWake = isGroupWakeAnnouncementTime(date);
+  if (!announcingSleep && !announcingWake) return;
+  const stateKey = announcingSleep ? "lastGroupRestDate" : "lastGroupWakeDate";
+  if (BOT_STATE[stateKey] === dateKey) return;
+
+  try {
+    const groups = await sock.groupFetchAllParticipating();
+    const groupIds = Object.keys(groups || {});
+    const message = announcingSleep ? GROUP_REST_MESSAGE : GROUP_WAKE_MESSAGE;
+    await Promise.allSettled(groupIds.map((groupId) => sock.sendMessage(groupId, { text: message })));
+    BOT_STATE[stateKey] = dateKey;
+    saveBotState();
+    console.log(`${announcingSleep ? "Pesan tidur" : "Pesan bangun"} dikirim ke ${groupIds.length} grup.`);
+  } catch (error) {
+    console.warn(`Gagal mengirim pesan ${announcingSleep ? "tidur" : "bangun"}:`, error.message);
+  }
+}
+
+function startGroupRestScheduler(sock) {
+  if (groupRestTimer) clearInterval(groupRestTimer);
+  let lastCheckedMinute = "";
+  const checkSchedule = () => {
+    const now = new Date();
+    const { dateKey, hour, minute } = getZonedClockParts(now);
+    const minuteKey = `${dateKey}-${hour}-${minute}`;
+    if (minuteKey === lastCheckedMinute) return;
+    lastCheckedMinute = minuteKey;
+    announceGroupRest(sock, now).catch((error) => {
+      console.warn("Scheduler tidur/bangun gagal:", error.message);
+    });
+  };
+  checkSchedule();
+  groupRestTimer = setInterval(checkSchedule, 15 * 1000);
+  groupRestTimer.unref?.();
 }
 
 async function handleMessage(sock, msg) {
@@ -2594,10 +2392,6 @@ async function handleMessage(sock, msg) {
     const lower = text.toLowerCase().trim();
     const linkCommand = parseLinkCommand(text);
     const detectedUrls = linkCommand?.urls || extractUrls(text);
-    if (!isGroup && senderLid === BOT_SETTINGS.private_allowed_lid) {
-      const handledScheduleRetry = await retryScheduleActivationFromReply(sock, msg, jid, text);
-      if (handledScheduleRetry) return;
-    }
     if (hasPendingJfr(senderLid) && !isJfrRequest) {
       if (!isGroup) {
         await handleJfrCodeAttempt(sock, jid, senderLid, text, msg);
@@ -2731,48 +2525,6 @@ async function handleMessage(sock, msg) {
         console.warn("Pembuatan sticker gambar gagal:", error.message);
         await sock.sendMessage(jid, { text: "Maaf, gambar belum bisa dijadikan sticker. Coba kirim gambar yang lebih kecil ya." }, { quoted: msg });
       }
-      return;
-    }
-
-    if (lower === `${PREFIX}jadwal` || lower.startsWith(`${PREFIX}jadwal `)) {
-      const dayKey = parseClassScheduleDay(text);
-      if (!dayKey) {
-        await sock.sendMessage(jid, { text: `Gunakan ${PREFIX}jadwal atau ${PREFIX}jadwal senin sampai ${PREFIX}jadwal minggu.` }, { quoted: msg });
-        return;
-      }
-      await sendClassScheduleContent(sock, jid, dayKey, new Date(), { includeAudio: true, quoted: msg });
-      return;
-    }
-
-    const naturalSchedule = parseNaturalScheduleRequest(text);
-    if (naturalSchedule) {
-      const inviteCode = extractWhatsAppGroupInviteCode(text);
-      if (inviteCode) {
-        if (isGroup || senderLid !== BOT_SETTINGS.private_allowed_lid) {
-          await sock.sendMessage(jid, { text: "Permintaan jadwal dengan tautan grup hanya dapat dipakai admin melalui DM ya." }, { quoted: msg });
-          return;
-        }
-        try {
-          const { groupJid, subject } = await resolveScheduleGroupFromInvite(sock, inviteCode);
-          BOT_STATE.classScheduleGroupJid = groupJid;
-          saveBotState();
-          await sendClassScheduleContent(sock, groupJid, naturalSchedule.dayKey, naturalSchedule.targetDate, { includeAudio: true });
-          await sock.sendMessage(
-            jid,
-            { text: `✅ Audio dan teks jadwal ${naturalSchedule.dayKey} sudah dikirim ke grup *${subject}*.` },
-            { quoted: msg }
-          );
-        } catch (error) {
-          console.warn("Pengiriman jadwal natural ke grup gagal:", error.message);
-          await sock.sendMessage(
-            jid,
-            { text: "Maaf, jadwal belum bisa dikirim ke grup tujuan. Pastikan akun bot sudah menjadi anggota grup dari tautan tersebut, lalu coba lagi ya." },
-            { quoted: msg }
-          );
-        }
-        return;
-      }
-      await sendClassScheduleContent(sock, jid, naturalSchedule.dayKey, naturalSchedule.targetDate, { includeAudio: true, quoted: msg });
       return;
     }
 
@@ -3150,9 +2902,8 @@ async function startBot() {
         reconnectTimer = null;
       }
       console.log("✅ Bot sudah terhubung ke WhatsApp!");
+      startGroupRestScheduler(sock);
       console.log("Nomor:", sock.user?.id?.split(":")[0] || "-");
-      const defaultScheduleActivation = await activateDefaultScheduleGroup(sock);
-      await notifyScheduleActivation(sock, defaultScheduleActivation);
       startAutoLinkCacheScheduler();
     }
 
@@ -3235,16 +2986,9 @@ module.exports = {
   buildQuestionLimitReply,
   buildQuotaStatusReply,
   buildAdminStatusReply,
-  getClassScheduleDayKey,
-  parseClassScheduleDay,
-  getUpcomingScheduleDate,
-  extractWhatsAppGroupInviteCode,
-  getQuotedMessageId,
-  parseNaturalScheduleRequest,
-  formatClassScheduleMessage,
-  sendClassScheduleContent,
-  getClassScheduleAudioPath,
-  formatClassScheduleDate,
+  isGroupRestTime,
+  isGroupRestAnnouncementTime,
+  isGroupWakeAnnouncementTime,
   normalizePlaceFeature,
   formatPlaceSummary,
   extractUrls,
@@ -3259,7 +3003,6 @@ module.exports = {
   classifyAutomaticLinkResults,
   isAutoLinkScanGroup,
   normalizeGroupJid,
-  getUpcomingScheduleDate,
   buildHelpText,
   isAdminLid,
   isJfrRole,

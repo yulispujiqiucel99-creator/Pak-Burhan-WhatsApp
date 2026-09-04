@@ -27,15 +27,9 @@ const {
   buildQuestionLimitReply,
   buildQuotaStatusReply,
   buildAdminStatusReply,
-  getClassScheduleDayKey,
-  parseClassScheduleDay,
-  getUpcomingScheduleDate,
-  extractWhatsAppGroupInviteCode,
-  getQuotedMessageId,
-  parseNaturalScheduleRequest,
-  formatClassScheduleMessage,
-  getClassScheduleAudioPath,
-  formatClassScheduleDate,
+  isGroupRestTime,
+  isGroupRestAnnouncementTime,
+  isGroupWakeAnnouncementTime,
   normalizePlaceFeature,
   formatPlaceSummary,
   extractUrls,
@@ -174,20 +168,6 @@ test("membuat nomor antrean untuk permintaan grup yang masuk saat cooldown", asy
   next.release();
 });
 
-test("mendeteksi reply langsung pada pesan gagal jadwal", () => {
-  const reply = {
-    message: {
-      extendedTextMessage: {
-        contextInfo: { stanzaId: "activation-failure-1" },
-      },
-    },
-  };
-  const ordinaryMessage = { message: { conversation: "bahas topik lain" } };
-  assert.equal(getQuotedMessageId(reply), "activation-failure-1");
-  assert.equal(getQuotedMessageId(ordinaryMessage), "");
-});
-
-
 test("membuang reasoning internal dari hasil analisis gambar", () => {
   const withThink = "<think>Langkah internal yang tidak boleh tampil.</think>\n\nHalo Mas, jawaban akhirnya sudah benar. 📚";
   assert.equal(sanitizeVisionReply(withThink), "Halo Mas, jawaban akhirnya sudah benar. 📚");
@@ -322,6 +302,15 @@ test("menampilkan sisa kuota dan waktu reset tanpa mengubah pemakaian", () => {
   assert.equal(usage["235656601194672"].count, 7);
 });
 
+test("peringatan tidur dan bangun memakai waktu WIB yang tepat", () => {
+  assert.equal(isGroupRestTime(new Date("2026-08-14T14:29:00.000Z")), false);
+  assert.equal(isGroupRestTime(new Date("2026-08-14T14:30:00.000Z")), true);
+  assert.equal(isGroupRestTime(new Date("2026-08-14T20:59:00.000Z")), true);
+  assert.equal(isGroupRestTime(new Date("2026-08-14T21:00:00.000Z")), false);
+  assert.equal(isGroupRestAnnouncementTime(new Date("2026-08-14T14:30:00.000Z")), true);
+  assert.equal(isGroupWakeAnnouncementTime(new Date("2026-08-14T21:00:00.000Z")), true);
+});
+
 test("membuat teks !sisa dan !status tanpa mengekspos API key", () => {
   const quotaText = buildQuotaStatusReply(
     { name: "Naufal", gender: "male" },
@@ -335,50 +324,4 @@ test("membuat teks !sisa dan !status tanpa mengekspos API key", () => {
   assert.match(statusText, /Status Pak Burhan/);
   assert.match(statusText, /Model Gemini:/);
   assert.doesNotMatch(statusText, /gsk_|sk-/i);
-});
-
-test("membuat satu pesan informasi Senin berisi seragam, pelajaran, dan dua piket", () => {
-  const date = new Date("2026-08-10T10:00:00.000Z");
-  const message = formatClassScheduleMessage("senin", date);
-  assert.equal(formatClassScheduleDate(date), "10 Agustus 2026, senin");
-  assert.match(message, /\*INFORMASI SENIN\*/);
-  assert.match(message, /_10 Agustus 2026, senin_/);
-  assert.match(message, /👔 Seragam\nmemakai seragam sekolah lama/);
-  assert.match(message, /📔 Jadwal\n- Upacara\n- Matematika/);
-  assert.match(message, /- PAI dan BP/);
-  assert.match(message, /🛋️ Piket kelas\n\*SENIN\*\n- Farida\n- Rara/);
-  assert.match(message, /🍴 Piket MBG\n\*SENIN\*\n- Farida\n- Nayla\n- Lulu\n- Satria\n- Alby\n- Amanda/);
-  assert.match(message, /\*JIKA TERDAPAT KESALAHAN PADA JADWAL HUBUNGIN NOMOR DARURAT\*🗿😅\*$/);
-});
-
-
-test("menemukan audio jadwal untuk setiap hari dalam seminggu", () => {
-  for (const dayKey of ["senin", "selasa", "rabu", "kamis", "jumat", "sabtu", "minggu"]) {
-    assert.match(getClassScheduleAudioPath(dayKey), new RegExp(`${dayKey}\\.ogg$`));
-  }
-});
-
-
-
-test("memahami permintaan jadwal natural yang menyertakan tautan grup", () => {
-  const request = parseNaturalScheduleRequest("Pak tolong kirim jadwal hari Minggu ke https://chat.whatsapp.com/Kp4ULXH1ABh3OS2niLCe8P?s=sh", new Date("2026-08-14T10:00:00.000Z"));
-  assert.equal(request.dayKey, "minggu");
-  assert.equal(formatClassScheduleDate(request.targetDate), "16 Agustus 2026, minggu");
-});
-
-test("memahami pertanyaan jadwal natural untuk hari ini, besok, dan nama hari", () => {
-  const fridayWib = new Date("2026-08-14T10:00:00.000Z");
-  const tomorrow = parseNaturalScheduleRequest("Pak, jadwal besok apa?", fridayWib);
-  assert.equal(tomorrow.dayKey, "sabtu");
-  assert.equal(tomorrow.reference, "besok");
-  assert.equal(formatClassScheduleDate(tomorrow.targetDate), "15 Agustus 2026, sabtu");
-
-  const monday = parseNaturalScheduleRequest("Pelajaran Senin apa, Pak?", fridayWib);
-  assert.equal(monday.dayKey, "senin");
-  assert.equal(formatClassScheduleDate(monday.targetDate), "17 Agustus 2026, senin");
-  assert.equal(getUpcomingScheduleDate("senin", fridayWib).toISOString(), monday.targetDate.toISOString());
-
-  const today = parseNaturalScheduleRequest("Pak, piket hari ini siapa?", fridayWib);
-  assert.equal(today.dayKey, "jumat");
-  assert.equal(parseNaturalScheduleRequest("Pak, kamu baik?", fridayWib), null);
 });
