@@ -27,18 +27,15 @@ const {
   buildQuestionLimitReply,
   buildQuotaStatusReply,
   buildAdminStatusReply,
-  isGroupRestTime,
   getClassScheduleDayKey,
   parseClassScheduleDay,
   getUpcomingScheduleDate,
   extractWhatsAppGroupInviteCode,
   getQuotedMessageId,
-  parseScheduleActivationCommand,
   parseNaturalScheduleRequest,
   formatClassScheduleMessage,
   getClassScheduleAudioPath,
   formatClassScheduleDate,
-  isClassScheduleDeliveryTime,
   normalizePlaceFeature,
   formatPlaceSummary,
   extractUrls,
@@ -57,7 +54,6 @@ const {
   isAdminLid,
   isJfrRole,
   isValidJfrCodeInput,
-  getOfficialHolidayDate,
 } = require("../index");
 
 test("JFR, role admin, dan menu rahasia tetap terpisah", () => {
@@ -191,14 +187,6 @@ test("mendeteksi reply langsung pada pesan gagal jadwal", () => {
   assert.equal(getQuotedMessageId(ordinaryMessage), "");
 });
 
-test("membaca perintah aktivasi jadwal dari DM dan tautan grup", () => {
-  const link = "https://chat.whatsapp.com/Kp4ULXH1ABh3OS2niLCe8P?s=sh";
-  assert.equal(extractWhatsAppGroupInviteCode(link), "Kp4ULXH1ABh3OS2niLCe8P");
-  assert.deepEqual(parseScheduleActivationCommand(`!aktifkan jadwal ${link}`), { inviteCode: "Kp4ULXH1ABh3OS2niLCe8P" });
-  assert.deepEqual(parseScheduleActivationCommand(`!jadwal aktifkan ${link}`), { inviteCode: "Kp4ULXH1ABh3OS2niLCe8P" });
-  assert.deepEqual(parseScheduleActivationCommand("!aktifkan jadwal"), { error: "missing_link" });
-  assert.equal(parseScheduleActivationCommand("!jadwal senin"), null);
-});
 
 test("membuang reasoning internal dari hasil analisis gambar", () => {
   const withThink = "<think>Langkah internal yang tidak boleh tampil.</think>\n\nHalo Mas, jawaban akhirnya sudah benar. 📚";
@@ -319,12 +307,6 @@ test("kuota pertanyaan dan balasan limit bekerja sesuai profil", () => {
 });
 
 
-test("menutup respons grup pada 21.30 sampai sebelum 04.00 WIB", () => {
-  assert.equal(isGroupRestTime(new Date("2026-08-14T14:29:00.000Z")), false);
-  assert.equal(isGroupRestTime(new Date("2026-08-14T14:30:00.000Z")), true);
-  assert.equal(isGroupRestTime(new Date("2026-08-14T20:59:00.000Z")), true);
-  assert.equal(isGroupRestTime(new Date("2026-08-14T21:00:00.000Z")), false);
-});
 
 test("menampilkan sisa kuota dan waktu reset tanpa mengubah pemakaian", () => {
   const usage = {
@@ -376,27 +358,7 @@ test("menemukan audio jadwal untuk setiap hari dalam seminggu", () => {
   }
 });
 
-test("hanya menerima hostname resmi saat mengonfirmasi kalender hari raya", () => {
-  const results = [
-    { url: "https://kemenag.go.id/pengumuman", title: "Idulfitri 1 April 2026", content: "Idulfitri jatuh pada 1 April 2026." },
-    { url: "https://subdomain.setneg.go.id/kalender", title: "Idulfitri 1 April 2026", content: "Idulfitri jatuh pada 1 April 2026." },
-    { url: "https://kemenag.go.id.attacker.example/palsu", title: "Idulfitri 1 April 2026", content: "Idulfitri jatuh pada 1 April 2026." },
-  ];
-  const confirmed = getOfficialHolidayDate("idulfitri", results);
-  assert.deepEqual(confirmed, {
-    dateKey: "2026-04-01",
-    sources: ["kemenag.go.id", "subdomain.setneg.go.id"],
-  });
-});
 
-test("membaca hari jadwal dan hanya mengirim pada pukul 16.00 atau 20.00 WIB", () => {
-  assert.equal(parseClassScheduleDay("!jadwal kamis"), "kamis");
-  assert.equal(parseClassScheduleDay("!jadwal ahad"), "minggu");
-  assert.equal(getClassScheduleDayKey(new Date("2026-08-17T10:00:00.000Z")), "senin");
-  assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-17T09:00:00.000Z")), true);
-  assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-17T13:00:00.000Z")), true);
-  assert.equal(isClassScheduleDeliveryTime(new Date("2026-08-17T11:00:00.000Z")), false);
-});
 
 test("memahami permintaan jadwal natural yang menyertakan tautan grup", () => {
   const request = parseNaturalScheduleRequest("Pak tolong kirim jadwal hari Minggu ke https://chat.whatsapp.com/Kp4ULXH1ABh3OS2niLCe8P?s=sh", new Date("2026-08-14T10:00:00.000Z"));
