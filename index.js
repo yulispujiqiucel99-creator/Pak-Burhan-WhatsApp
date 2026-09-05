@@ -41,7 +41,9 @@ const GEMINI_API_KEYS = [...new Set(
 )];
 const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
 const GEMINI_BASE_URL = (process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta/openai").replace(/\/+$/, "");
-const DEFAULT_PRIVATE_ALLOWED_LID = (process.env.PRIVATE_ALLOWED_LID || "").replace(/\D/g, "");
+const DEFAULT_ADMIN_LID = (process.env.ADMIN_LID || process.env.PRIVATE_ALLOWED_LID || "").replace(/\D/g, "");
+const DEBUG_SENDER_IDENTITY = String(process.env.DEBUG_SENDER_IDENTITY || "true").toLowerCase() !== "false";
+const DEFAULT_PRIVATE_ALLOWED_LID = DEFAULT_ADMIN_LID;
 const DEFAULT_BOT_TIMEZONE = process.env.BOT_TIMEZONE || "Asia/Jakarta";
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
 const VIRUSTOTAL_API_KEY = (process.env.VIRUSTOTAL_API_KEY || "").trim();
@@ -2354,6 +2356,20 @@ async function handleMessage(sock, msg) {
     const senderLid = getSenderLid(msg);
     const senderNumber = getSenderNumber(msg);
     const senderId = senderLid || senderNumber || "unknown";
+    if (DEBUG_SENDER_IDENTITY) {
+      const key = msg.key || {};
+      console.log("[DEBUG-SENDER]", {
+        chatType: isGroup ? "group" : "private",
+        remoteJid: jid || null,
+        participant: key.participant || null,
+        participantPn: key.participantPn || null,
+        participantLid: key.participantLid || null,
+        senderPn: key.senderPn || null,
+        senderLid: key.senderLid || null,
+        normalizedSenderLid: senderLid || null,
+        normalizedSenderNumber: senderNumber || null,
+      });
+    }
     const isJfrRequest = text.trim().toLowerCase() === "#jfr";
     const privateAdminMatch = isAdminLid(senderLid);
     if (!isGroup && !privateAdminMatch && !isJfrRole(senderLid) && !isJfrRequest && !hasPendingJfr(senderLid) && !isJfrCandidate(senderLid)) {
@@ -2361,6 +2377,7 @@ async function handleMessage(sock, msg) {
         senderDigits: normalizeJidNumber(senderLid).length,
         allowedDigits: getConfiguredPrivateAllowedLid().length,
         adminMatch: privateAdminMatch,
+        adminSource: process.env.ADMIN_LID ? "ADMIN_LID" : "PRIVATE_ALLOWED_LID",
       });
       return;
     }
@@ -2920,9 +2937,9 @@ async function startBot() {
   await refreshBotSettings(true);
   await loadJfrRolesFromSupabase();
   if (!BOT_SETTINGS.private_allowed_lid) {
-    console.warn("PRIVATE_ALLOWED_LID masih kosong; semua chat privat akan diabaikan.");
+    console.warn("ADMIN_LID/PRIVATE_ALLOWED_LID masih kosong; semua chat privat akan diabaikan.");
   } else {
-    console.log(`PRIVATE_ALLOWED_LID siap (${String(BOT_SETTINGS.private_allowed_lid).length} digit).`);
+    console.log(`ADMIN_LID siap (${String(BOT_SETTINGS.private_allowed_lid).length} digit). Debug sender: ${DEBUG_SENDER_IDENTITY ? "aktif" : "mati"}.`);
   }
 
   await restoreAuthSession();

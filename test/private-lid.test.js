@@ -15,7 +15,11 @@ function runLidCheck(input) {
     }));
   `;
   return JSON.parse(execFileSync(process.execPath, ["-e", script], {
-    env: { ...process.env, PRIVATE_ALLOWED_LID: "235656601194672" },
+    env: {
+      ...process.env,
+      PRIVATE_ALLOWED_LID: "235656601194672",
+      ...(input.adminLid ? { ADMIN_LID: input.adminLid } : {}),
+    },
     encoding: "utf8",
   }));
 }
@@ -33,4 +37,14 @@ test("private allowed LID cocok setelah normalisasi", () => {
     wrong: false,
     empty: false,
   });
+});
+
+test("ADMIN_LID diprioritaskan dari PRIVATE_ALLOWED_LID", () => {
+  assert.equal(runLidCheck({
+    adminLid: "235656601194672",
+    plain: "235656601194672",
+    lid: "235656601194672@lid",
+    device: "235656601194672:1@lid",
+    wrong: "999999999999999",
+  }).plain, true);
 });
