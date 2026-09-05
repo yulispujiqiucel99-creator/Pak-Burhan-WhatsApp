@@ -585,9 +585,13 @@ function consumeQuestionQuotaForStore(usageStore, lid, now = Date.now()) {
   return true;
 }
 
+function getConfiguredPrivateAllowedLid() {
+  return normalizeJidNumber(process.env.PRIVATE_ALLOWED_LID || BOT_SETTINGS.private_allowed_lid);
+}
+
 function isAdminLid(lid) {
   const normalizedLid = normalizeJidNumber(lid);
-  const allowedLid = normalizeJidNumber(BOT_SETTINGS.private_allowed_lid);
+  const allowedLid = getConfiguredPrivateAllowedLid();
   return Boolean(normalizedLid && allowedLid) && normalizedLid === allowedLid;
 }
 
@@ -2351,8 +2355,13 @@ async function handleMessage(sock, msg) {
     const senderNumber = getSenderNumber(msg);
     const senderId = senderLid || senderNumber || "unknown";
     const isJfrRequest = text.trim().toLowerCase() === "#jfr";
-    if (!isGroup && !isAdminLid(senderLid) && !isJfrRole(senderLid) && !isJfrRequest && !hasPendingJfr(senderLid) && !isJfrCandidate(senderLid)) {
-      console.log(`[P][${senderLid || "unknown"}] pesan privat diabaikan: bukan admin, JFR, atau permintaan verifikasi`);
+    const privateAdminMatch = isAdminLid(senderLid);
+    if (!isGroup && !privateAdminMatch && !isJfrRole(senderLid) && !isJfrRequest && !hasPendingJfr(senderLid) && !isJfrCandidate(senderLid)) {
+      console.log(`[P][${senderLid || "unknown"}] pesan privat diabaikan: bukan admin, JFR, atau permintaan verifikasi`, {
+        senderDigits: normalizeJidNumber(senderLid).length,
+        allowedDigits: getConfiguredPrivateAllowedLid().length,
+        adminMatch: privateAdminMatch,
+      });
       return;
     }
 
