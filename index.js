@@ -3,7 +3,8 @@
  * Baileys + QR / Pairing Code + Google Gemini
  */
 
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const {
   default: makeWASocket,
@@ -19,7 +20,6 @@ const pino = require("pino");
 const axios = require("axios");
 const sharp = require("sharp");
 const fs = require("fs");
-const path = require("path");
 const crypto = require("crypto");
 const { execFile } = require("child_process");
 const { promisify } = require("util");
@@ -586,7 +586,9 @@ function consumeQuestionQuotaForStore(usageStore, lid, now = Date.now()) {
 }
 
 function isAdminLid(lid) {
-  return Boolean(lid) && String(lid) === String(BOT_SETTINGS.private_allowed_lid);
+  const normalizedLid = normalizeJidNumber(lid);
+  const allowedLid = normalizeJidNumber(BOT_SETTINGS.private_allowed_lid);
+  return Boolean(normalizedLid && allowedLid) && normalizedLid === allowedLid;
 }
 
 function isJfrRole(lid) {
@@ -2910,6 +2912,8 @@ async function startBot() {
   await loadJfrRolesFromSupabase();
   if (!BOT_SETTINGS.private_allowed_lid) {
     console.warn("PRIVATE_ALLOWED_LID masih kosong; semua chat privat akan diabaikan.");
+  } else {
+    console.log(`PRIVATE_ALLOWED_LID siap (${String(BOT_SETTINGS.private_allowed_lid).length} digit).`);
   }
 
   await restoreAuthSession();
