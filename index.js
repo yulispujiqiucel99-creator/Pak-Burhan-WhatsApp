@@ -24,6 +24,10 @@ const crypto = require("crypto");
 const { execFile } = require("child_process");
 const { promisify } = require("util");
 const FormData = require("form-data");
+const {
+  restoreSession,
+  uploadSession,
+} = require("./lib/supabase-session-backup");
 const execFileAsync = promisify(execFile);
 
 const BOT_NUMBER = (process.env.BOT_NUMBER || "").replace(/\D/g, "");
@@ -75,6 +79,9 @@ const PREFIX = process.env.PREFIX || "!";
 const AUTH_METHOD = (process.env.AUTH_METHOD || "qr").toLowerCase();
 const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || "").trim();
+const SUPABASE_SESSION_BUCKET = (process.env.SUPABASE_SESSION_BUCKET || "wa-auth-session").trim();
+const SUPABASE_SESSION_OBJECT = (process.env.SUPABASE_SESSION_OBJECT || "whatsapp-auth.enc").trim();
+const WA_SESSION_ENCRYPTION_KEY = (process.env.WA_SESSION_ENCRYPTION_KEY || "").trim();
 const SETTINGS_REFRESH_MS = 60 * 1000;
 let activeGeminiKeyIndex = 0;
 const BOT_RUNTIME = {
@@ -2814,8 +2821,70 @@ async function handleMessage(sock, msg) {
 let reconnectAttempts = 0;
 let reconnectTimer = null;
 const MAX_RECONNECT = 10;
+let sessionBackupTimer = null;
+let sessionBackupRunning = false;
+let sessionBackupQueued = false;
+
+const sessionBackupConfig = {
+  supabaseUrl: SUPABASE_URL,
+  serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
+  encryptionKey: WA_SESSION_ENCRYPTION_KEY,
+  bucket: SUPABASE_SESSION_BUCKET,
+  objectPath: SUPABASE_SESSION_OBJECT,
+};
+
+function scheduleSessionBackup(reason = "perubahan credential", delayMs = 15000) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !WA_SESSION_ENCRYPTION_KEY) return;
+  if (sessionBackupTimer) clearTimeout(sessionBackupTimer);
+  sessionBackupTimer = setTimeout(() => {
+    sessionBackupTimer = null;
+    backupAuthSession(reason).catch((error) => {
+      console.warn("Backup session Supabase gagal:", error.message);
+    });
+  }, delayMs);
+}
+
+async function backupAuthSession(reason = "manual") {
+  if (sessionBackupRunning) {
+    sessionBackupQueued = true;
+    return;
+  }
+  sessionBackupRunning = true;
+  try {
+    const result = await uploadSession({ authDir: AUTH_DIR, ...sessionBackupConfig });
+    if (result.uploaded) {
+      console.log(`Session WhatsApp terenkripsi tersimpan di Supabase (${reason}, ${result.files} file).`);
+    }
+  } finally {
+    sessionBackupRunning = false;
+    if (sessionBackupQueued) {
+      sessionBackupQueued = false;
+      scheduleSessionBackup("perubahan lanjutan", 5000);
+    }
+  }
+}
+
+async function restoreAuthSession() {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !WA_SESSION_ENCRYPTION_KEY) {
+    console.warn("Backup session Supabase nonaktif: isi SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, dan WA_SESSION_ENCRYPTION_KEY.");
+    return;
+  }
+  try {
+    const result = await restoreSession({ authDir: AUTH_DIR, ...sessionBackupConfig });
+    if (result.restored) {
+      console.log(`Session WhatsApp dipulihkan dari Supabase (${result.files} file terenkripsi).`);
+    } else if (result.reason === "remote-session-missing") {
+      console.log("Belum ada backup session WhatsApp di Supabase; QR/pairing diperlukan untuk koneksi pertama.");
+    } else if (result.reason === "local-session-exists") {
+      console.log("Session lokal ditemukan; backup Supabase tidak menimpa session lokal.");
+    }
+  } catch (error) {
+    console.warn("Pemulihan session Supabase gagal; bot memakai session lokal:", error.message);
+  }
+}
 
 async function startBot() {
+
   if (AUTH_METHOD === "pairing" && !BOT_NUMBER) {
     console.error("AUTH_METHOD=pairing membutuhkan BOT_NUMBER di .env");
     process.exit(1);
@@ -2843,6 +2912,7 @@ async function startBot() {
     console.warn("PRIVATE_ALLOWED_LID masih kosong; semua chat privat akan diabaikan.");
   }
 
+  await restoreAuthSession();
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
 
@@ -2860,7 +2930,10 @@ async function startBot() {
     markOnlineOnConnect: false,
   });
 
-  sock.ev.on("creds.update", saveCreds);
+  sock.ev.on("creds.update", async () => {
+    await saveCreds();
+    scheduleSessionBackup("creds.update");
+  });
 
   sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect, qr } = update;
@@ -2902,6 +2975,7 @@ async function startBot() {
         reconnectTimer = null;
       }
       console.log("✅ Bot sudah terhubung ke WhatsApp!");
+      scheduleSessionBackup("connection.open", 3000);
       startGroupRestScheduler(sock);
       console.log("Nomor:", sock.user?.id?.split(":")[0] || "-");
       startAutoLinkCacheScheduler();

@@ -13,7 +13,12 @@ Setelah itu, buka **Railway → Variables** dan pastikan dua koneksi berikut ter
 ```env
 SUPABASE_URL=https://project-ref.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=service_role_key_anda
+SUPABASE_SESSION_BUCKET=wa-auth-session
+SUPABASE_SESSION_OBJECT=whatsapp-auth.enc
+WA_SESSION_ENCRYPTION_KEY=rahasia_acak_panjang
 ```
+
+`SUPABASE_SESSION_BUCKET` harus menunjuk bucket Storage private. `WA_SESSION_ENCRYPTION_KEY` hanya disimpan sebagai secret di hosting dan tidak boleh diubah setelah session terenkripsi pertama dibuat. Bot mengenkripsi isi `auth_info` sebelum mengunggah satu objek backup ke bucket tersebut; session tidak disimpan sebagai data mentah di tabel.
 
 Gunakan key `service_role` dari **Supabase Dashboard → Project Settings → API**. Key ini hanya dipakai oleh bot di Railway dan tidak boleh dibagikan atau digunakan pada aplikasi publik.
 

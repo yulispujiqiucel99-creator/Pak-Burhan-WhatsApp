@@ -38,7 +38,10 @@ Untuk iterasi sticker, jalankan `npm run test:sticker`. Pemeriksaan penuh tersed
 | `GEMINI_VISION_MODEL` | Model untuk `!gambar`; default mengikuti `GEMINI_MODEL`. |
 | `GEMINI_BASE_URL` | Default `https://generativelanguage.googleapis.com/v1beta/openai`; biasanya tidak perlu diubah. |
 | `SUPABASE_URL` | URL proyek Supabase yang menyimpan profil pengguna. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service-role key Supabase untuk bot di Railway; rahasia dan tidak boleh dibagikan. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service-role key Supabase untuk bot; rahasia dan tidak boleh dibagikan. |
+| `SUPABASE_SESSION_BUCKET` | Nama bucket Storage private untuk backup session; default `wa-auth-session`. |
+| `SUPABASE_SESSION_OBJECT` | Nama objek backup terenkripsi; default `whatsapp-auth.enc`. |
+| `WA_SESSION_ENCRYPTION_KEY` | Kunci enkripsi session AES-256-GCM; wajib disimpan sebagai secret dan jangan diubah setelah backup dibuat. |
 | `PRIVATE_ALLOWED_LID` | LID privat yang diizinkan; dikelola dari Railway Variables dan kode. |
 | `BOT_TIMEZONE` | Zona waktu bot; default `Asia/Jakarta` dan dikelola dari Railway Variables/kode. |
 | `TAVILY_API_KEY` | Opsional; dipakai untuk fitur pencarian internet. |
@@ -116,6 +119,22 @@ Perintah `!status` **hanya** dapat digunakan dari DM oleh LID admin yang diizink
 ## Login Ulang
 
 Untuk menghubungkan nomor WhatsApp yang berbeda, hapus folder `auth_info` pada volume Railway atau lakukan *wipe* volume, lalu deploy atau restart ulang bot.
+
+## Backup Session WhatsApp ke Supabase
+
+Bot dapat menyimpan session Baileys ke bucket Storage private `wa-auth-session` di Supabase. Isi folder `auth_info` tidak diunggah mentah; bot mengenkripsinya dengan AES-256-GCM sebelum upload. Saat startup, backup hanya dipulihkan jika folder `auth_info` lokal belum berisi file, sehingga session lokal tidak ditimpa otomatis.
+
+Tambahkan environment variable berikut pada deployment. `WA_SESSION_ENCRYPTION_KEY` harus berupa rahasia acak yang panjang dan hanya boleh disimpan di menu Secrets/Environment Variables hosting; jangan commit ke GitHub, Supabase, atau chat.
+
+```env
+SUPABASE_URL=https://project-ref.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=service_role_key_anda
+SUPABASE_SESSION_BUCKET=wa-auth-session
+SUPABASE_SESSION_OBJECT=whatsapp-auth.enc
+WA_SESSION_ENCRYPTION_KEY=ganti_dengan_rahasia_acak_panjang
+```
+
+Bucket harus tetap private. Jangan menggunakan anon key untuk backup session dan jangan membuat bucket ini public. Jika `WA_SESSION_ENCRYPTION_KEY` berubah, backup lama tidak dapat didekripsi dan bot akan meminta QR/pairing baru.
 
 ## Penanganan Error Gemini
 
