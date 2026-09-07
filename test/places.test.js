@@ -45,22 +45,11 @@ const {
   normalizeGroupJid,
   classifyAutomaticLinkResults,
   buildHelpText,
-  isAdminLid,
-  isJfrRole,
-  isValidJfrCodeInput,
 } = require("../index");
 
-test("JFR, role admin, dan menu rahasia tetap terpisah", () => {
-  assert.equal(isValidJfrCodeInput("289O4AD"), true);
-  assert.equal(isValidJfrCodeInput("289o4ad"), true);
-  assert.equal(isValidJfrCodeInput("123456"), false);
-  assert.equal(isValidJfrCodeInput("12345678"), false);
-  assert.equal(isValidJfrCodeInput("ABC-123"), false);
-  assert.equal(isAdminLid("12345"), false);
-  assert.equal(isJfrRole("12345"), false);
-  assert.doesNotMatch(buildHelpText(), /!daftarjfr|!cabutjfr/);
-  assert.match(buildHelpText({ isAdmin: true }), /!daftarjfr/);
-  assert.match(buildHelpText({ isAdmin: true }), /!cabutjfr/);
+test("bantuan tidak memuat command administrasi privat tersembunyi", () => {
+  assert.doesNotMatch(buildHelpText(), /Command rahasia admin/i);
+  assert.doesNotMatch(buildHelpText({ isAdmin: true }), /Command rahasia admin/i);
 });
 
 test("!help tidak lagi menampilkan command musik yang sudah dihapus", () => {

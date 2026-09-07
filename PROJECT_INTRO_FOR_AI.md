@@ -15,13 +15,13 @@ Entry point utama adalah `index.js`. Bot dapat dijalankan lokal di Windows atau 
 
 ## Fitur utama
 
-Bot mendukung chat AI melalui Gemini, command `!help`, `!menu`, `!sisa`, `!status`, `!cari`, `!ceklink`, `!tempat`, `!gambar`, `!stiker`, `!hd`, serta sistem profil nama/gender, kuota pertanyaan, role JFR, pengamanan link, dan penyimpanan profil ke Supabase.
+Bot mendukung chat AI melalui Gemini, command `!help`, `!menu`, `!sisa`, `!status`, `!cari`, `!ceklink`, `!tempat`, `!gambar`, `!stiker`, `!hd`, serta sistem profil nama/gender, kuota pertanyaan, private access `admin`/`jfr`, pengamanan link, dan penyimpanan profil ke Supabase.
 
 Bot juga memiliki peringatan grup saat waktu tidur dan bangun. Fitur jadwal kelas, scheduler pengiriman jadwal, notifikasi hari libur otomatis, dan pesan spam otomatis sudah dihapus. Bot tidak boleh mengirim pesan ke grup tanpa pemicu yang diizinkan, kecuali peringatan tidur/bangun yang memang merupakan pengecualian yang sengaja dipertahankan.
 
 ## Penyimpanan dan Supabase
 
-Supabase digunakan untuk menyimpan profil pengguna pada table `public.profiles` dan role JFR pada table `public.jfr_roles`. Session Baileys disimpan sebagai file terenkripsi di Supabase Storage bucket private `wa-auth-session`, bukan sebagai credential mentah di database.
+Supabase digunakan untuk menyimpan profil pengguna pada table `public.profiles` dan registry akses privat pada table `public.private_access`. Registry menyimpan role `guest`, `jfr`, atau `admin`, waktu intro privat satu kali, dan waktu pemberian akses. Session Baileys disimpan sebagai file terenkripsi di Supabase Storage bucket private `wa-auth-session`, bukan sebagai credential mentah di database.
 
 Environment variable session backup:
 
@@ -35,18 +35,18 @@ WA_SESSION_ENCRYPTION_KEY=...
 
 ## Akses chat pribadi
 
-Chat pribadi dibatasi oleh `PRIVATE_ALLOWED_LID`. Nilainya harus berisi LID pengguna yang diizinkan. Code memuat `.env` dari folder yang sama dengan `index.js`, menormalisasi angka LID, dan hanya mengizinkan LID yang cocok. Chat grup memiliki jalur guard yang berbeda dan memerlukan mention bot jika fitur tersebut berlaku.
+Chat grup tidak memakai pencocokan LID untuk menentukan private access. Di chat pribadi, bot membaca LID pengirim dan registry `private_access`. Jika LID belum dikenal, bot mengirim intro otomatis satu kali seumur hidup per LID. Pengguna lalu mengetik `#JFR`; bot membuat kode unik dan mengirimkannya ke `ADMIN_PHONE`. Setelah kode benar dimasukkan di chat yang sama, role `jfr` disimpan permanen. Nomor yang cocok dengan `ADMIN_PHONE` didaftarkan sebagai role `admin` ketika mengirim pesan privat.
 
-Contoh konfigurasi:
-
+Contoh konfigurasi baru:
 ```env
-PRIVATE_ALLOWED_LID=angka_LID_pengguna
+ADMIN_PHONE=628895683942
+PRIVATE_INTRO_TEXT=
 ```
 
-Jika chat pribadi tidak dibalas tetapi grup berjalan, periksa urutan berikut: pastikan `.env` berada di samping `index.js`, pastikan nama file bukan `.env.txt`, pastikan LID benar, lalu restart penuh proses Node.js. Jangan mengirim secret ke chat.
+Tidak ada lagi sistem allowlist privat lama, command mulai, atau command administratif role. Pesan pertama pengguna privat tidak menunggu command mulai: intro dikirim otomatis. Jika chat privat tidak membalas, periksa `ADMIN_PHONE`, `.env` di samping `index.js`, status migration `private_access`, dan log error `sendMessage()`.
 
 ## Cara meminta bantuan AI
 
-Saat meminta bantuan, analisis dulu alur pesan dari `messages.upsert` ke `handleMessage`, lalu ke guard `PRIVATE_ALLOWED_LID`, command handler, dan akhirnya `sock.sendMessage()`. Jangan langsung menyalahkan Gemini jika command lokal seperti `!help` juga gagal. Periksa return awal, nilai LID yang sudah dinormalisasi, lokasi `.env`, versi commit, dan error yang tertangkap oleh `try/catch`.
+Saat meminta bantuan, analisis dulu alur dari `messages.upsert` ke `handleMessage`, lalu bedakan jalur grup dan privat. Untuk privat, periksa `getSenderLid`, registry `private_access`, status intro satu kali, pemrosesan `#JFR`, pending verification, dan akhirnya `sock.sendMessage()`. Jangan langsung menyalahkan Gemini jika command lokal juga gagal. Jangan memperkenalkan kembali sistem allowlist privat lama; sistem baru memakai `ADMIN_PHONE` dan table `private_access`.
 
 Semua perubahan yang menyentuh session WhatsApp, pengiriman otomatis, izin chat pribadi, atau kredensial harus direview dengan hati-hati dan diuji sebelum deployment.

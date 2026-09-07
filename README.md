@@ -4,13 +4,13 @@ Bot WhatsApp persona **Pak Burhan** sebagai wali kelas 7D. Proyek ini menggunaka
 
 ## Fitur
 
-Bot mendukung login melalui **QR Code** atau **Pairing Code**, percakapan AI dengan gaya Pak Burhan, memori percakapan, moderasi kata kasar, perintah `!help`, `!menu`, `!cari`, `!ceklink`, `!tempat`, `!gambar`, dan `!jadwal`. Perintah `!tempat` memakai Geoapify untuk mencari lokasi publik lalu mengirimkan satu **pesan lokasi WhatsApp yang dapat diketuk** untuk membuka peta. Pada grup, bot hanya menjawab saat akun bot benar-benar di-mention dengan format **`@bot pertanyaan`**; pada chat pribadi, bot hanya membalas LID yang diizinkan. Konfigurasi proyek dirancang untuk deployment Railway dengan volume persisten. Pesan masuk baru otomatis ditandai sebagai sudah dibaca oleh akun bot agar tidak menumpuk sebagai notifikasi belum dibaca; fitur ini tidak membisukan suara notifikasi WhatsApp.
+Bot mendukung login melalui **QR Code** atau **Pairing Code**, percakapan AI dengan gaya Pak Burhan, memori percakapan, moderasi kata kasar, perintah `!help`, `!menu`, `!cari`, `!ceklink`, `!tempat`, `!gambar`, `!stiker`, dan `!hd`. Perintah `!tempat` memakai Geoapify untuk mencari lokasi publik lalu mengirimkan satu **pesan lokasi WhatsApp yang dapat diketuk** untuk membuka peta. Pada grup, bot hanya menjawab saat akun bot benar-benar di-mention dengan format **`@bot pertanyaan`**; chat pribadi memakai sistem private access baru: intro hanya dikirim sekali per LID, sedangkan LID dengan role `admin` atau `jfr` dapat memakai chat AI. Konfigurasi proyek dirancang untuk deployment dengan volume atau backup session Supabase. Pesan masuk baru otomatis ditandai sebagai sudah dibaca oleh akun bot agar tidak menumpuk sebagai notifikasi belum dibaca; fitur ini tidak membisukan suara notifikasi WhatsApp.
 
 Untuk menghemat limit AI, **grup** memakai jeda pemrosesan 20 detik. Pesan berguna yang masuk saat ada permintaan grup lain diproses akan dibalas `Permintaan sedang diproses (nomor antrean X).`, lalu tetap dijawab sesuai urutan. Basa-basi sederhana seperti sapaan, pesan tes, ucapan terima kasih, dan tawa singkat tidak masuk antrean atau diteruskan ke Gemini; bot langsung mengirim respons hemat-limit dengan panggilan Mas atau Mbak sesuai profil. **DM admin tidak memakai cooldown maupun antrean.**
 
 Setiap LID memiliki paling banyak **20 pertanyaan dalam jendela 24 jam**. Yang dihitung adalah permintaan yang benar-benar akan diproses, termasuk pencarian tempat dan pencarian internet; onboarding, `!help`, `!sisa`, `!status`, respons waktu, moderasi, serta basa-basi tidak menghabiskan kuota. Saat kuota penuh, bot mengirimkan pesan tunggu 24 jam. Kuota tersimpan di volume Railway sehingga tidak hilang saat bot restart.
 
-Bot beristirahat di seluruh grup setiap hari pada **21.30–04.00 WIB**. Tepat pukul 21.30, bot mengirim satu peringatan tidur ke tiap grup, lalu pada pukul 04.00 mengirim peringatan bangun. Selama waktu istirahat, bot tidak merespons pesan grup—termasuk dari admin grup. Chat DM dari LID admin tetap tersedia 24 jam, tetapi tetap mengikuti batas 20 pertanyaan per 24 jam.
+Bot beristirahat di seluruh grup setiap hari pada **21.30–04.00 WIB**. Tepat pukul 21.30, bot mengirim satu peringatan tidur ke tiap grup, lalu pada pukul 04.00 mengirim peringatan bangun. Selama waktu istirahat, bot tidak merespons pesan grup. Chat DM yang sudah memiliki role `admin` atau `jfr` tetap tersedia 24 jam dan tidak dibatasi kuota.
 
 ## Setup Lokal
 
@@ -42,7 +42,8 @@ Untuk iterasi sticker, jalankan `npm run test:sticker`. Pemeriksaan penuh tersed
 | `SUPABASE_SESSION_BUCKET` | Nama bucket Storage private untuk backup session; default `wa-auth-session`. |
 | `SUPABASE_SESSION_OBJECT` | Nama objek backup terenkripsi; default `whatsapp-auth.enc`. |
 | `WA_SESSION_ENCRYPTION_KEY` | Kunci enkripsi session AES-256-GCM; wajib disimpan sebagai secret dan jangan diubah setelah backup dibuat. |
-| `PRIVATE_ALLOWED_LID` | LID privat yang diizinkan; dikelola dari Railway Variables dan kode. |
+| `ADMIN_PHONE` | Nomor admin untuk menerima kode verifikasi `#JFR`; format internasional tanpa tanda `+`. |
+| `PRIVATE_INTRO_TEXT` | Opsional; teks intro privat custom yang hanya dikirim satu kali per LID. |
 | `BOT_TIMEZONE` | Zona waktu bot; default `Asia/Jakarta` dan dikelola dari Railway Variables/kode. |
 | `TAVILY_API_KEY` | Opsional; dipakai untuk fitur pencarian internet. |
 | `VIRUSTOTAL_API_KEY` | Diperlukan untuk `!ceklink` dan pembacaan link otomatis. Dipakai untuk memeriksa URL terhadap deteksi malware/phishing. Simpan hanya di Railway Variables. |
@@ -52,7 +53,7 @@ Untuk iterasi sticker, jalankan `npm run test:sticker`. Pemeriksaan penuh tersed
 
 ## Penyimpanan Profil di Supabase
 
-Supabase sekarang dipakai untuk menyimpan profil pengguna pada tabel `profiles` serta role JFR permanen pada tabel `jfr_roles`. Profil menyimpan LID, nama, gender, dan waktu pembaruan; role JFR menyimpan LID dan waktu pemberian akses. State lokal di folder `data/` hanya dipakai sebagai cache/fallback dan backfill, bukan satu-satunya sumber permanen untuk role JFR. Pengaturan perilaku bot, model Gemini, zona waktu, LID privat, daftar command, dan aturan mention tetap berada di kode atau Railway Variables. Jalankan migrasi dan ikuti panduan di [`supabase/README.md`](./supabase/README.md).
+Supabase sekarang dipakai untuk menyimpan profil pengguna pada tabel `profiles` dan registry akses privat pada tabel `private_access`. Registry tersebut menyimpan role `guest`, `jfr`, atau `admin`, serta waktu intro privat satu kali dan waktu pemberian akses. State lokal di folder `data/` dipakai sebagai cache/fallback, sedangkan Supabase menjadi penyimpanan permanen ketika tersedia. Jalankan migration terbaru dan ikuti panduan di [`supabase/README.md`](./supabase/README.md).
 
 ## Deployment Railway
 
@@ -114,7 +115,7 @@ Bot menerima gambar JPG, PNG, dan WebP dengan ukuran maksimum **10 MB**. Gambar 
 
 Gunakan `!sisa` setelah profil lengkap untuk melihat kuota terpakai, sisa pertanyaan, dan waktu reset kuota LID Anda. Perintah ini tidak mengurangi kuota dan dapat digunakan di DM maupun grup selama bot sedang aktif.
 
-Perintah `!status` **hanya** dapat digunakan dari DM oleh LID admin yang diizinkan. Laporan ini tidak memuat API key; isinya hanya status koneksi WhatsApp, kesiapan Gemini, VirusTotal, Jina Reader, dan Geoapify, model Gemini aktif, kuota admin, status jam istirahat grup, serta zona waktu bot.
+Perintah `!status` **hanya** dapat digunakan dari DM oleh akun dengan role `admin`. Laporan ini tidak memuat API key; isinya hanya status koneksi WhatsApp, kesiapan Gemini, VirusTotal, Jina Reader, dan Geoapify, model Gemini aktif, kuota admin, status jam istirahat grup, serta zona waktu bot.
 
 ## Login Ulang
 
@@ -197,6 +198,4 @@ Kode dikirim hanya ke DM admin dengan format peringatan berikut:
 ⚠️JANGAN BAGIKAN KODE INI JIKA TIDAK ADA YANG MEMINTA MENJADI JFR⚠️
 ```
 
-Peminta menerima instruksi untuk memasukkan kode. Kode berlaku selama **satu jam**, hanya dapat digunakan sekali, dan memiliki maksimal **tiga percobaan**. Kode disimpan dalam bentuk hash pada state bot, bukan sebagai kode teks biasa. Setelah verifikasi berhasil, peran JFR bersifat permanen sampai dicabut admin.
-
-JFR dapat melakukan chat AI melalui DM tanpa batas kuota, tetapi tidak memperoleh akses command admin. Daftar command admin tidak ditampilkan pada menu JFR atau member. Di DM admin, menu tambahan menampilkan `!daftarjfr` untuk melihat JFR aktif dan `!cabutjfr [LID]` untuk mencabut akses. Data role dan permintaan verifikasi disimpan pada `data/bot_state.json` di volume Railway.
+Peminta menerima instruksi untuk memasukkan kode. Kode berlaku selama **satu jam**, hanya dapat digunakan sekali, dan memiliki maksimal **tiga percobaan**. Kode disimpan dalam bentuk hash pada state bot, bukan sebagai kode teks biasa. Setelah verifikasi berhasil, role `jfr` disimpan permanen di registry `private_access`. Pesan intro privat dicatat satu kali per LID agar tidak dikirim berulang.
