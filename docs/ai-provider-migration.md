@@ -4,7 +4,7 @@
 
 Repository utama saat ini memakai Groq secara langsung melalui endpoint OpenAI-compatible `chat/completions`. Chat umum memakai `BOT_SETTINGS.groq_model`, sedangkan analisis gambar memakai `GROQ_VISION_MODEL`. Tersedia rotasi dua API key Groq saat respons 429. Tidak ditemukan penggunaan aktif OpenRouter pada jalur request saat ini; komentar/header lama hanya menyebut OpenRouter.
 
-Fungsi utama yang perlu dipindahkan adalah `askAI()` untuk chat umum dan `askVision()` untuk analisis gambar. Fitur tool, link scanner, profil, jadwal, JFR, HD, dan Supabase tidak perlu diubah jika kontrak fungsi tersebut dipertahankan.
+Fungsi utama yang perlu dipindahkan adalah `askAI()` untuk chat umum dan `askVision()` untuk analisis gambar. Fitur tool, link scanner, profil, jadwal tidur/bangun, Grup Kontrol, HD, dan Supabase tidak perlu diubah jika kontrak fungsi tersebut dipertahankan.
 
 ## Kandidat Google Gemini API
 

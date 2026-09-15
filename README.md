@@ -4,13 +4,13 @@ Bot WhatsApp persona **Pak Burhan** sebagai wali kelas 7D. Proyek ini menggunaka
 
 ## Fitur
 
-Bot mendukung login melalui **QR Code** atau **Pairing Code**, percakapan AI dengan gaya Pak Burhan, memori percakapan, moderasi kata kasar, perintah `!help`, `!menu`, `!cari`, `!ceklink`, `!tempat`, `!gambar`, `!stiker`, dan `!hd`. Perintah `!tempat` memakai Geoapify untuk mencari lokasi publik lalu mengirimkan satu **pesan lokasi WhatsApp yang dapat diketuk** untuk membuka peta. Pada grup, bot hanya menjawab saat akun bot benar-benar di-mention dengan format **`@bot pertanyaan`**; chat pribadi memakai sistem private access baru: intro hanya dikirim sekali per LID, sedangkan LID dengan role `admin` atau `jfr` dapat memakai chat AI. Konfigurasi proyek dirancang untuk deployment dengan volume atau backup session Supabase. Pesan masuk baru otomatis ditandai sebagai sudah dibaca oleh akun bot agar tidak menumpuk sebagai notifikasi belum dibaca; fitur ini tidak membisukan suara notifikasi WhatsApp.
+Bot mendukung login melalui **QR Code** atau **Pairing Code**, percakapan AI dengan gaya Pak Burhan, memori percakapan, moderasi kata kasar, perintah `!help`, `!menu`, `!cari`, `!ceklink`, `!tempat`, `!gambar`, `!stiker`, dan `!hd`. Perintah `!tempat` memakai Geoapify untuk mencari lokasi publik lalu mengirimkan satu **pesan lokasi WhatsApp yang dapat diketuk** untuk membuka peta. Akses admin dikendalikan hanya oleh satu **Grup Kontrol** yang ditentukan melalui `CONTROL_GROUP_JID`: semua pesan dari grup itu diperlakukan sebagai pesan admin, tanpa verifikasi tambahan. Status tersebut tidak berlaku pada grup lain atau chat pribadi. Pada grup umum, bot tetap hanya menjawab saat akun bot benar-benar di-mention dengan format **`@bot pertanyaan`**. Konfigurasi proyek dirancang untuk deployment dengan volume atau backup session Supabase. Pesan masuk baru otomatis ditandai sebagai sudah dibaca oleh akun bot agar tidak menumpuk sebagai notifikasi belum dibaca; fitur ini tidak membisukan suara notifikasi WhatsApp.
 
-Untuk menghemat limit AI, **grup** memakai jeda pemrosesan 20 detik. Pesan berguna yang masuk saat ada permintaan grup lain diproses akan dibalas `Permintaan sedang diproses (nomor antrean X).`, lalu tetap dijawab sesuai urutan. Basa-basi sederhana seperti sapaan, pesan tes, ucapan terima kasih, dan tawa singkat tidak masuk antrean atau diteruskan ke Gemini; bot langsung mengirim respons hemat-limit dengan panggilan Mas atau Mbak sesuai profil. **DM admin tidak memakai cooldown maupun antrean.**
+Untuk menghemat limit AI, **grup** memakai jeda pemrosesan 20 detik. Pesan berguna yang masuk saat ada permintaan grup lain diproses akan dibalas `Permintaan sedang diproses (nomor antrean X).`, lalu tetap dijawab sesuai urutan. Basa-basi sederhana seperti sapaan, pesan tes, ucapan terima kasih, dan tawa singkat tidak masuk antrean atau diteruskan ke Gemini; bot langsung mengirim respons hemat-limit dengan panggilan Mas atau Mbak sesuai profil. **Chat pribadi tidak memakai antrean grup.**
 
-Setiap LID memiliki paling banyak **20 pertanyaan dalam jendela 24 jam**. Yang dihitung adalah permintaan yang benar-benar akan diproses, termasuk pencarian tempat dan pencarian internet; onboarding, `!help`, `!sisa`, `!status`, respons waktu, moderasi, serta basa-basi tidak menghabiskan kuota. Saat kuota penuh, bot mengirimkan pesan tunggu 24 jam. Kuota tersimpan di volume Railway sehingga tidak hilang saat bot restart.
+Setiap LID memiliki paling banyak **20 pertanyaan dalam jendela 24 jam**. Yang dihitung adalah permintaan yang benar-benar akan diproses, termasuk pencarian tempat dan pencarian internet; onboarding, `!help`, `!sisa`, `!status`, respons waktu, moderasi, serta basa-basi tidak menghabiskan kuota. Saat kuota penuh, bot mengirimkan pesan tunggu 24 jam. Kuota tersimpan di volume Railway sehingga tidak hilang saat bot restart. Pesan dari Grup Kontrol tetap dikenali sebagai admin berdasarkan JID grup, bukan berdasarkan LID atau nomor pengirim.
 
-Bot beristirahat di seluruh grup setiap hari pada **21.30–04.00 WIB**. Tepat pukul 21.30, bot mengirim satu peringatan tidur ke tiap grup, lalu pada pukul 04.00 mengirim peringatan bangun. Selama waktu istirahat, bot tidak merespons pesan grup. Chat DM yang sudah memiliki role `admin` atau `jfr` tetap tersedia 24 jam dan tidak dibatasi kuota.
+Bot beristirahat di seluruh grup setiap hari pada **21.30–04.00 WIB**. Tepat pukul 21.30, bot mengirim satu peringatan tidur ke tiap grup, lalu pada pukul 04.00 mengirim peringatan bangun. Selama waktu istirahat, bot tidak merespons pesan grup. Akses admin tidak diberikan melalui DM.
 
 ## Setup Lokal
 
@@ -42,8 +42,7 @@ Untuk iterasi sticker, jalankan `npm run test:sticker`. Pemeriksaan penuh tersed
 | `SUPABASE_SESSION_BUCKET` | Nama bucket Storage private untuk backup session; default `wa-auth-session`. |
 | `SUPABASE_SESSION_OBJECT` | Nama objek backup terenkripsi; default `whatsapp-auth.enc`. |
 | `WA_SESSION_ENCRYPTION_KEY` | Kunci enkripsi session AES-256-GCM; wajib disimpan sebagai secret dan jangan diubah setelah backup dibuat. |
-| `ADMIN_PHONE` | Nomor admin untuk menerima kode verifikasi `#JFR`; format internasional tanpa tanda `+`. |
-| `PRIVATE_INTRO_TEXT` | Opsional; teks intro privat custom yang hanya dikirim satu kali per LID. |
+| `CONTROL_GROUP_JID` | ID numerik atau JID grup kontrol, misalnya `120363xxxxxxxx` atau `120363xxxxxxxx@g.us`. Link undangan tidak dapat dipakai sebagai pengganti JID. Hanya pesan dari JID ini yang memperoleh akses admin. |
 | `BOT_TIMEZONE` | Zona waktu bot; default `Asia/Jakarta` dan dikelola dari Railway Variables/kode. |
 | `TAVILY_API_KEY` | Opsional; dipakai untuk fitur pencarian internet. |
 | `VIRUSTOTAL_API_KEY` | Diperlukan untuk `!ceklink` dan pembacaan link otomatis. Dipakai untuk memeriksa URL terhadap deteksi malware/phishing. Simpan hanya di Railway Variables. |
@@ -53,7 +52,7 @@ Untuk iterasi sticker, jalankan `npm run test:sticker`. Pemeriksaan penuh tersed
 
 ## Penyimpanan Profil di Supabase
 
-Supabase sekarang dipakai untuk menyimpan profil pengguna pada tabel `profiles` dan registry akses privat pada tabel `private_access`. Registry tersebut menyimpan role `guest`, `jfr`, atau `admin`, serta waktu intro privat satu kali dan waktu pemberian akses. State lokal di folder `data/` dipakai sebagai cache/fallback, sedangkan Supabase menjadi penyimpanan permanen ketika tersedia. Jalankan migration terbaru dan ikuti panduan di [`supabase/README.md`](./supabase/README.md).
+Supabase dipakai untuk menyimpan profil pengguna pada tabel `profiles`. Registry role `private_access` tidak lagi digunakan oleh runtime dan harus dihapus melalui migration pembersihan. State lokal di folder `data/` dipakai untuk kuota, memori, dan runtime; Supabase menjadi penyimpanan profil permanen ketika tersedia. Jalankan seluruh migration terbaru dan ikuti panduan di [`supabase/README.md`](./supabase/README.md).
 
 ## Deployment Railway
 
@@ -115,7 +114,7 @@ Bot menerima gambar JPG, PNG, dan WebP dengan ukuran maksimum **10 MB**. Gambar 
 
 Gunakan `!sisa` setelah profil lengkap untuk melihat kuota terpakai, sisa pertanyaan, dan waktu reset kuota LID Anda. Perintah ini tidak mengurangi kuota dan dapat digunakan di DM maupun grup selama bot sedang aktif.
 
-Perintah `!status` **hanya** dapat digunakan dari DM oleh akun dengan role `admin`. Laporan ini tidak memuat API key; isinya hanya status koneksi WhatsApp, kesiapan Gemini, VirusTotal, Jina Reader, dan Geoapify, model Gemini aktif, kuota admin, status jam istirahat grup, serta zona waktu bot.
+Perintah `!status` **hanya** dapat digunakan dari Grup Kontrol yang ditentukan melalui `CONTROL_GROUP_JID`. Laporan ini tidak memuat API key; isinya hanya status koneksi WhatsApp, kesiapan Gemini, VirusTotal, Jina Reader, dan Geoapify, model Gemini aktif, kuota, status jam istirahat grup, serta zona waktu bot.
 
 ## Login Ulang
 
@@ -186,16 +185,8 @@ Fitur ini memakai `TAVILY_API_KEY` yang sama dengan pencarian internet. Jika key
 Audio khusus hari raya belum diaktifkan oleh mekanisme ini karena aset audionya belum berada di repository. Saat aset final sudah tersedia, pengiriman audio dapat ditambahkan tanpa mengubah aturan tanggal dan anti-duplikasi.
 
 
-## Verifikasi Peran JFR
+## Grup Kontrol
 
-Akun dapat meminta peran JFR dengan mengirim **`#JFR` melalui DM**. Fitur ini tidak diproses di grup. Jika identitas nama dan gender belum lengkap, bot akan menyelesaikan onboarding terlebih dahulu. Setelah identitas diketahui, bot membuat kode acak tujuh karakter yang hanya terdiri dari huruf kapital `A-Z` dan angka `0-9`.
+Sistem JFR, kode unik, pencocokan LID privat, dan `ADMIN_PHONE` telah dihapus. Untuk membuka akses admin, isi `CONTROL_GROUP_JID` dengan ID numerik atau JID grup WhatsApp khusus, misalnya `120363xxxxxxxx` atau `120363xxxxxxxx@g.us`. Link undangan WhatsApp tidak dapat dipakai langsung karena tidak memuat JID percakapan. Semua anggota grup, termasuk bot dan tester, memperoleh akses admin secara otomatis karena keputusan akses didasarkan pada **JID percakapan**, bukan nomor atau LID pengirim.
 
-Kode dikirim hanya ke DM admin dengan format peringatan berikut:
-
-```text
-⚠️KODE JFR BARU SAJA MASUK⚠️
-[KODE 7 KARAKTER]
-⚠️JANGAN BAGIKAN KODE INI JIKA TIDAK ADA YANG MEMINTA MENJADI JFR⚠️
-```
-
-Peminta menerima instruksi untuk memasukkan kode. Kode berlaku selama **satu jam**, hanya dapat digunakan sekali, dan memiliki maksimal **tiga percobaan**. Kode disimpan dalam bentuk hash pada state bot, bukan sebagai kode teks biasa. Setelah verifikasi berhasil, role `jfr` disimpan permanen di registry `private_access`. Pesan intro privat dicatat satu kali per LID agar tidak dikirim berulang.
+Akses tersebut hanya aktif ketika pesan benar-benar berasal dari JID yang sama dengan `CONTROL_GROUP_JID`. Pesan dari grup umum dan chat pribadi tidak dianggap admin, sehingga seseorang tidak dapat membawa hak admin Grup Kontrol ke percakapan lain. Jika `CONTROL_GROUP_JID` kosong atau salah, tidak ada percakapan yang memperoleh akses admin.

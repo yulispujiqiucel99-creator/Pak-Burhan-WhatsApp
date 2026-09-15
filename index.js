@@ -30,6 +30,13 @@ const {
 } = require("./lib/supabase-session-backup");
 const execFileAsync = promisify(execFile);
 
+function normalizeControlGroupJid(value) {
+  const raw = String(value || "").trim();
+  if (/^\d+@g\.us$/.test(raw)) return raw;
+  if (/^\d+$/.test(raw)) return `${raw}@g.us`;
+  return raw;
+}
+
 const BOT_NUMBER = (process.env.BOT_NUMBER || "").replace(/\D/g, "");
 const GEMINI_API_KEYS = [...new Set(
   [
@@ -41,8 +48,7 @@ const GEMINI_API_KEYS = [...new Set(
 )];
 const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
 const GEMINI_BASE_URL = (process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta/openai").replace(/\/+$/, "");
-const ADMIN_PHONE = (process.env.ADMIN_PHONE || "").replace(/\D/g, "");
-const PRIVATE_INTRO_TEXT = process.env.PRIVATE_INTRO_TEXT || "";
+const CONTROL_GROUP_JID = normalizeControlGroupJid(process.env.CONTROL_GROUP_JID);
 const DEFAULT_BOT_TIMEZONE = process.env.BOT_TIMEZONE || "Asia/Jakarta";
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
 const VIRUSTOTAL_API_KEY = (process.env.VIRUSTOTAL_API_KEY || "").trim();
@@ -101,10 +107,6 @@ const QUESTION_USAGE_FILE = path.join(DATA_DIR, "question_usage.json");
 const BOT_STATE_FILE = path.join(DATA_DIR, "bot_state.json");
 const TOOL_CONTEXT_FILE = path.join(DATA_DIR, "tool_context.json");
 const DAILY_QUESTION_LIMIT = 20;
-const PRIVATE_CODE_LENGTH = 7;
-const PRIVATE_CODE_TTL_MS = 60 * 60 * 1000;
-const PRIVATE_MAX_ATTEMPTS = 3;
-const PRIVATE_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 const DAILY_QUESTION_WINDOW_MS = 24 * 60 * 60 * 1000;
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -283,72 +285,6 @@ async function saveProfileToSupabase(lid, profile) {
   }
 }
 
-async function upsertPrivateAccess(lid, role, fields = {}) {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !lid) return false;
-  try {
-    await axios.post(
-      `${SUPABASE_URL}/rest/v1/private_access`,
-      { lid: String(lid), role, ...fields, updated_at: new Date().toISOString() },
-      {
-        params: { on_conflict: "lid" },
-        headers: supabaseHeaders("resolution=merge-duplicates,return=minimal"),
-        timeout: 10000,
-      }
-    );
-    return true;
-  } catch (error) {
-    console.warn(`Gagal menyimpan akses privat (${error.response?.status || "-"}):`, error.message);
-    return false;
-  }
-}
-
-async function loadPrivateAccessFromSupabase() {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    console.warn("Supabase belum dikonfigurasi; akses JFR tersimpan sementara di state lokal.");
-    return false;
-  }
-  try {
-    const { data } = await axios.get(`${SUPABASE_URL}/rest/v1/private_access`, {
-      params: { select: "lid,role,intro_sent_at,granted_at", order: "granted_at.asc", limit: 1000 },
-      headers: supabaseHeaders(),
-      timeout: 10000,
-    });
-    const remote = Array.isArray(data) ? data : [];
-    const merged = { ...(BOT_STATE.privateAccess || {}) };
-    for (const item of remote) {
-      if (!item?.lid || !["guest", "admin", "jfr"].includes(item.role)) continue;
-      merged[String(item.lid)] = {
-        role: item.role,
-        introSentAt: item.intro_sent_at || merged[String(item.lid)]?.introSentAt || "",
-        grantedAt: item.granted_at || merged[String(item.lid)]?.grantedAt || "",
-      };
-      if (item.intro_sent_at) BOT_STATE.privateIntroShown[String(item.lid)] = item.intro_sent_at;
-    }
-    BOT_STATE.privateAccess = merged;
-    saveBotState();
-    console.log(`Akses privat tersinkronisasi: ${Object.keys(merged).length} akun.`);
-    return true;
-  } catch (error) {
-    console.warn(`Gagal memuat akses privat (${error.response?.status || "-"}); memakai state lokal.`);
-    return false;
-  }
-}
-
-async function deletePrivateAccess(lid) {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !lid) return false;
-  try {
-    await axios.delete(`${SUPABASE_URL}/rest/v1/private_access`, {
-      params: { lid: `eq.${lid}` },
-      headers: supabaseHeaders(),
-      timeout: 10000,
-    });
-    return true;
-  } catch (error) {
-    console.warn(`Gagal menghapus akses privat (${error.response?.status || "-"}):`, error.message);
-    return false;
-  }
-}
-
 async function deleteProfileFromSupabase(lid) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !lid) return false;
   try {
@@ -380,10 +316,6 @@ let TOOL_CONTEXT = {};
 let BOT_STATE = {
   lastGroupRestDate: "",
   lastGroupWakeDate: "",
-  privateAccess: {},
-  privateVerification: {},
-  privateCandidates: {},
-  privateIntroShown: {},
 };
 let groupRestTimer = null;
 let autoLinkCacheTimer = null;
@@ -487,11 +419,11 @@ function loadBotState() {
     if (fs.existsSync(BOT_STATE_FILE)) {
           const parsed = JSON.parse(fs.readFileSync(BOT_STATE_FILE, "utf8"));
       BOT_STATE = parsed && typeof parsed === "object"
-        ? { lastGroupRestDate: "", lastGroupWakeDate: "", privateAccess: {}, privateVerification: {}, privateCandidates: {}, privateIntroShown: {}, ...parsed }
-        : { lastGroupRestDate: "", lastGroupWakeDate: "", privateAccess: {}, privateVerification: {}, privateCandidates: {}, privateIntroShown: {} };
+        ? { lastGroupRestDate: "", lastGroupWakeDate: "", ...parsed }
+        : { lastGroupRestDate: "", lastGroupWakeDate: "" };
     }
   } catch {
-    BOT_STATE = { lastGroupRestDate: "", lastGroupWakeDate: "", privateAccess: {}, privateVerification: {}, privateCandidates: {}, privateIntroShown: {} };
+    BOT_STATE = { lastGroupRestDate: "", lastGroupWakeDate: "" };
   }
 }
 
@@ -579,122 +511,15 @@ function consumeQuestionQuotaForStore(usageStore, lid, now = Date.now()) {
   return true;
 }
 
-function getPrivateAccess(lid) {
-  return lid ? BOT_STATE.privateAccess?.[String(lid)] || null : null;
+function isControlGroup(jid) {
+  return Boolean(CONTROL_GROUP_JID && jid === CONTROL_GROUP_JID);
 }
 
-function isPrivateRole(lid, role = "") {
-  const access = getPrivateAccess(lid);
-  if (!access) return false;
-  return role ? access.role === role : ["admin", "jfr"].includes(access.role);
-}
-
-function hasPendingPrivateVerification(lid) {
-  const pending = lid ? BOT_STATE.privateVerification?.[lid] : null;
-  return Boolean(pending && Number(pending.expiresAt) > Date.now());
-}
-
-function isPrivateCandidate(lid) {
-  return Boolean(lid && BOT_STATE.privateCandidates?.[lid]);
-}
-
-function createPrivateCode() {
-  const bytes = crypto.randomBytes(PRIVATE_CODE_LENGTH);
-  return [...bytes].map((byte) => PRIVATE_CODE_ALPHABET[byte % PRIVATE_CODE_ALPHABET.length]).join("");
-}
-
-function hashPrivateCode(code) {
-  return crypto.createHash("sha256").update(String(code || "").trim().toUpperCase()).digest("hex");
-}
-
-function privateCodeMatches(input, expectedHash) {
-  const actual = Buffer.from(hashPrivateCode(input), "hex");
-  const expected = Buffer.from(String(expectedHash || ""), "hex");
-  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
-}
-
-function isValidPrivateCodeInput(text) {
-  return /^[A-Za-z0-9]{7}$/.test(String(text || "").trim());
-}
-
-function cleanupPrivateState(now = Date.now()) {
-  for (const [lid, item] of Object.entries(BOT_STATE.privateVerification || {})) {
-    if (!item || Number(item.expiresAt) <= now) delete BOT_STATE.privateVerification[lid];
-  }
-  for (const [lid, item] of Object.entries(BOT_STATE.privateCandidates || {})) {
-    if (!item || Number(item.expiresAt) <= now) delete BOT_STATE.privateCandidates[lid];
-  }
-}
-
-function buildPrivateIntroText() {
-  const adminLink = ADMIN_PHONE ? `https://wa.me/${ADMIN_PHONE}` : "nomor admin yang sudah ditentukan";
-  const botLink = BOT_NUMBER ? `https://wa.me/${BOT_NUMBER}?text=%23JFR` : "chat ini lalu ketik #JFR";
-  return PRIVATE_INTRO_TEXT ||
-    `Ingin mengobrol dengan saya secara pribadi?\n\nSilakan ketik *#JFR* di chat ini. Saya akan membagikan kode unik ke nomor admin. Silakan meminta admin untuk mendapatkan kode unik tersebut, lalu masukkan kode itu di percakapan ini.\n\nUntuk bantuan lebih lanjut, silakan hubungi admin:\n${adminLink}\n\nJika ingin membuka chat bot dan mengirim #JFR, gunakan link berikut:\n${botLink}\n\nPesan pengenalan ini hanya dikirim satu kali. Jika ada yang ingin kamu tanyakan lebih lanjut, silakan.`;
-}
-
-async function sendPrivateIntroOnce(sock, jid, lid, msg) {
-  if (!lid || BOT_STATE.privateIntroShown?.[lid]) return false;
-  await sock.sendMessage(jid, { text: buildPrivateIntroText() }, { quoted: msg });
-  BOT_STATE.privateIntroShown[lid] = new Date().toISOString();
-  saveBotState();
-  if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
-    await upsertPrivateAccess(lid, "guest", { intro_sent_at: BOT_STATE.privateIntroShown[lid] }).catch(() => {});
-  }
-  return true;
-}
-
-async function beginPrivateVerification(sock, requesterLid, requesterJid) {
-  cleanupPrivateState();
-  const adminJid = ADMIN_PHONE ? `${ADMIN_PHONE}@s.whatsapp.net` : "";
-  if (!adminJid) return { ok: false, error: "admin_phone_not_configured" };
-  const code = createPrivateCode();
-  BOT_STATE.privateVerification[requesterLid] = {
-    codeHash: hashPrivateCode(code),
-    expiresAt: Date.now() + PRIVATE_CODE_TTL_MS,
-    attemptsUsed: 0,
-    requesterJid,
-  };
-  saveBotState();
-  await sock.sendMessage(adminJid, {
-    text: `KODE JFR BARU\nKode: ${code}\nLID calon pengguna: ${requesterLid}\nJangan bagikan kode ini kepada orang lain.`,
-  });
-  return { ok: true };
-}
-
-async function handlePrivateCodeAttempt(sock, jid, lid, text, msg) {
-  cleanupPrivateState();
-  const pending = BOT_STATE.privateVerification?.[lid];
-  if (!pending) return false;
-  if (!isValidPrivateCodeInput(text) || !privateCodeMatches(text, pending.codeHash)) {
-    pending.attemptsUsed = Number(pending.attemptsUsed || 0) + 1;
-    const remaining = Math.max(0, PRIVATE_MAX_ATTEMPTS - pending.attemptsUsed);
-    if (!remaining) {
-      delete BOT_STATE.privateVerification[lid];
-      saveBotState();
-      await sock.sendMessage(jid, { text: "❌ Kode salah tiga kali. Permintaan verifikasi hangus. Ketik #JFR lagi jika ingin mencoba kembali." }, { quoted: msg });
-      return true;
-    }
-    saveBotState();
-    await sock.sendMessage(jid, { text: `❌ Kode salah. Sisa percobaan: ${remaining}/${PRIVATE_MAX_ATTEMPTS}.` }, { quoted: msg });
-    return true;
-  }
-  const grantedAt = new Date().toISOString();
-  const saved = await upsertPrivateAccess(lid, "jfr", { granted_at: grantedAt });
-  if (!saved && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
-    await sock.sendMessage(jid, { text: "⚠️ Kode benar, tetapi akses belum tersimpan permanen karena Supabase tidak tersedia. Coba lagi setelah koneksi database normal." }, { quoted: msg });
-    return true;
-  }
-  BOT_STATE.privateAccess[lid] = { role: "jfr", grantedAt, introSentAt: BOT_STATE.privateIntroShown?.[lid] || "" };
-  delete BOT_STATE.privateVerification[lid];
-  delete BOT_STATE.privateCandidates[lid];
-  saveBotState();
-  await sock.sendMessage(jid, { text: "✅ Verifikasi berhasil. Sekarang kamu dapat mengobrol dengan Pak Burhan melalui DM." }, { quoted: msg });
-  return true;
+function hasAdminAccess({ jid, isGroup }) {
+  return Boolean(isGroup && isControlGroup(jid));
 }
 
 function consumeQuestionQuota(lid, now = Date.now()) {
-  if (isPrivateRole(lid)) return true;
   const allowed = consumeQuestionQuotaForStore(QUESTION_USAGE, lid, now);
   saveQuestionUsage();
   return allowed;
@@ -743,9 +568,6 @@ function formatBotDateTime(date) {
 }
 
 function buildQuotaStatusReply(profile, lid, now = Date.now()) {
-  if (isPrivateRole(lid)) {
-    return `Nah, ${getProfileGreeting(profile)}.\n\nKuota DM: tidak dibatasi untuk peran ${getPrivateAccess(lid)?.role === "admin" ? "admin" : "JFR"}. ✅`;
-  }
   const quota = getQuestionQuotaStatusForStore(QUESTION_USAGE, lid, now);
   const resetText = quota.resetAt
     ? `Reset kuota: ${formatBotDateTime(quota.resetAt)}`
@@ -2343,6 +2165,7 @@ async function handleMessage(sock, msg) {
     if (!jid || jid === "status@broadcast") return;
 
     const isGroup = isJidGroup(jid);
+    const isControl = hasAdminAccess({ jid, isGroup });
 
     const messageContent = normalizeMessageContent(msg.message);
     let text =
@@ -2357,13 +2180,6 @@ async function handleMessage(sock, msg) {
     const senderLid = getSenderLid(msg);
     const senderNumber = getSenderNumber(msg);
     const senderId = senderLid || senderNumber || "unknown";
-    const configuredAdmin = !isGroup && Boolean(ADMIN_PHONE) && senderNumber === ADMIN_PHONE;
-    if (configuredAdmin && senderLid && !isPrivateRole(senderLid, "admin")) {
-      BOT_STATE.privateAccess[senderLid] = { role: "admin", grantedAt: BOT_STATE.privateAccess[senderLid]?.grantedAt || new Date().toISOString(), introSentAt: BOT_STATE.privateIntroShown?.[senderLid] || "" };
-      saveBotState();
-      await upsertPrivateAccess(senderLid, "admin", { granted_at: BOT_STATE.privateAccess[senderLid].grantedAt, intro_sent_at: BOT_STATE.privateAccess[senderLid].introSentAt || null });
-    }
-    const isJfrRequest = text.trim().toLowerCase() === "#jfr";
 
     if (!text.trim()) return;
 
@@ -2410,40 +2226,13 @@ async function handleMessage(sock, msg) {
     const lower = text.toLowerCase().trim();
     const linkCommand = parseLinkCommand(text);
     const detectedUrls = linkCommand?.urls || extractUrls(text);
-    if (!isGroup) {
-      if (hasPendingPrivateVerification(senderLid) && !isJfrRequest) {
-        await handlePrivateCodeAttempt(sock, jid, senderLid, text, msg);
-        return;
-      }
-      if (isJfrRequest) {
-        if (isPrivateRole(senderLid)) {
-          await sock.sendMessage(jid, { text: "Akun ini sudah memiliki akses privat." }, { quoted: msg });
-          return;
-        }
-        BOT_STATE.privateCandidates[senderLid] = { expiresAt: Date.now() + PRIVATE_CODE_TTL_MS };
-        saveBotState();
-        const knownProfile = await loadProfileFromSupabase(senderLid, profileId);
-        if (knownProfile?.name && knownProfile?.gender) {
-          const result = await beginPrivateVerification(sock, senderLid, jid);
-          await sock.sendMessage(jid, { text: result.ok ? "Kode unik sudah dikirim ke admin. Silakan meminta admin untuk mendapatkan kode tersebut, lalu masukkan kode itu di chat ini. Kode berlaku 1 jam." : "Kode belum dapat dikirim karena nomor admin belum dikonfigurasi." }, { quoted: msg });
-        } else {
-          await sock.sendMessage(jid, { text: "Baik, permintaan dicatat. Tulis nama kamu terlebih dahulu, lalu gender kamu, agar verifikasi dapat dilanjutkan." }, { quoted: msg });
-        }
-        return;
-      }
-      if (!isPrivateRole(senderLid) && !isPrivateCandidate(senderLid)) {
-        await sendPrivateIntroOnce(sock, jid, senderLid, msg);
-        return;
-      }
-    }
-
     if (
       lower === `${PREFIX}help` ||
       lower === `${PREFIX}menu` ||
       lower === "help" ||
       lower === "menu"
     ) {
-      await sock.sendMessage(jid, { text: buildHelpText({ isAdmin: isPrivateRole(senderLid, "admin") }) }, { quoted: msg });
+      await sock.sendMessage(jid, { text: buildHelpText({ isAdmin: isControl }) }, { quoted: msg });
       return;
     }
 
@@ -2520,8 +2309,8 @@ async function handleMessage(sock, msg) {
     }
 
     if (lower === `${PREFIX}status`) {
-      if (isGroup || !isPrivateRole(senderLid, "admin")) {
-        await sock.sendMessage(jid, { text: "Perintah !status hanya dapat dipakai admin melalui chat DM." }, { quoted: msg });
+      if (!isControl) {
+        await sock.sendMessage(jid, { text: "Perintah !status hanya dapat dipakai di Grup Kontrol." }, { quoted: msg });
         return;
       }
       await sock.sendMessage(jid, { text: buildAdminStatusReply(senderLid) }, { quoted: msg });
@@ -2545,10 +2334,6 @@ async function handleMessage(sock, msg) {
     const onboarding = await processProfileOnboarding(profileId, senderId, text);
     if (!onboarding.ready) {
       await sock.sendMessage(jid, { text: onboarding.reply }, { quoted: msg });
-      if (isPrivateCandidate(senderLid) && onboarding.profile?.name && onboarding.profile?.gender) {
-        const result = await beginPrivateVerification(sock, senderLid, jid);
-        await sock.sendMessage(jid, { text: result.ok ? "Kode unik sudah dikirim ke admin. Silakan meminta admin untuk mendapatkan kode tersebut, lalu masukkan kode itu di chat ini. Kode berlaku 1 jam." : "Kode belum dapat dikirim karena nomor admin belum dikonfigurasi." }, { quoted: msg });
-      }
       return;
     }
 
@@ -2891,8 +2676,7 @@ async function startBot() {
   console.log(`Jina Reader siap${JINA_API_KEY ? " dengan API key" : " tanpa API key (batas rendah)"} untuk membaca isi link.`);
   console.log(`Gemini Vision siap untuk fitur !gambar dengan model: ${GEMINI_VISION_MODEL}`);
   await refreshBotSettings(true);
-  await loadPrivateAccessFromSupabase();
-  console.log(`Private access siap; admin delivery: ${ADMIN_PHONE ? "terkonfigurasi" : "belum dikonfigurasi"}.`);
+  console.log(`Grup Kontrol: ${CONTROL_GROUP_JID ? "terkonfigurasi" : "belum dikonfigurasi"}.`);
 
   await restoreAuthSession();
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
@@ -3060,8 +2844,9 @@ module.exports = {
   isAutoLinkScanGroup,
   normalizeGroupJid,
   normalizeJidNumber,
-  buildPrivateIntroText,
-  isValidPrivateCodeInput,
+  normalizeControlGroupJid,
+  isControlGroup,
+  hasAdminAccess,
   buildHelpText,
 };
 
