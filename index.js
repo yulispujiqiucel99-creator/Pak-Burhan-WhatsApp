@@ -1,7 +1,1 @@
-/**
- * Pak Burhan WhatsApp Bot
- * Baileys + QR / Pairing Code + Google Gemini
- *
- * TEMPORARY RESTORE - full update coming
- */
-console.log('Bot starting - full code restore in progress');
+TEMPORARY - please restore from commit 1970e2cab3b56870a3987852c7e73410ec2ddee7
